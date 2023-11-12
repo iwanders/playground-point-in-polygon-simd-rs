@@ -19,7 +19,7 @@ int pnpoly(int nvert, float *vertx, float *verty, float testx, float testy)
 }
 */
 
-pub fn inside(vertices: &[(f32, f32)], test: &(f32, f32)) -> bool {
+pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     let mut i = 0;
     let mut j = vertices.len() - 1;
     let mut inside = false;
@@ -35,6 +35,49 @@ pub fn inside(vertices: &[(f32, f32)], test: &(f32, f32)) -> bool {
     }
     inside
 }
+
+
+pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+    use std::arch::x86_64::*;
+    unsafe {
+        let mut i = 0;
+        let mut j = vertices.len() - 1;
+        // __m128d
+        let mut inside = false;
+        let mask = _mm_set1_epi8(-1);
+        let testv = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&test.0), mask);
+        while i < vertices.len() {
+            let curr = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[i].0), mask);
+            let next = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[j].0), mask);
+            
+            let a = (vertices[i].1 > test.1);
+            let b = (vertices[j].1 > test.1);
+            let cmpa = _mm_cmp_pd(curr, testv, _CMP_GE_OQ);
+            let cmpb = _mm_cmp_pd(next, testv, _CMP_GE_OQ);
+            // note, only care about upper of cmpa & cmpb
+            // let c1 = (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0);
+            let c1 = (test.0  - vertices[i].0) < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
+            let cc = _mm_sub_pd(testv, curr);
+            let vdiff = _mm_sub_pd(next, curr);
+            let cc_diff = _mm_div_pd(cc, vdiff); // is a division by zero, that's why this all breaks down.
+            // c1 = lower < upper (both of cc_diff);
+            let upper_at_left = _mm_permute_pd(cc_diff, 0b11);
+            let c1_s = _mm_cmp_sd(cc_diff, upper_at_left, _CMP_LE_OQ);
+            let c1 = _mm_testc_pd(c1_s, c1_s) != 0;
+
+            // a != b condition checks if test is between a or b's y coordinate.
+            // Then the 'c' condition checks on which side we are of the line.
+
+            if (a != b) && c1 {
+                inside = !inside;
+            }
+            j = i;
+            i += 1;
+        }
+        inside
+    }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -57,6 +100,22 @@ mod test {
     }
 
     #[test]
+    fn test_triangle_simd() {
+        let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
+        assert_eq!(inside_simd(&triangle, &(1.0, 1.0)), true);
+        assert_eq!(inside_simd(&triangle, &(3.0, 3.0)), false);
+
+        assert_eq!(inside_simd(&triangle, &(0.0, 0.0)), true);
+        assert_eq!(inside_simd(&triangle, &(0.0, 4.0)), false);
+        assert_eq!(inside_simd(&triangle, &(5.0, 0.0)), true);
+
+        assert_eq!(inside_simd(&triangle, &(0.0, 2.0)), true);
+        assert_eq!(inside_simd(&triangle, &(3.0, 2.0)), false);
+        assert_eq!(inside_simd(&triangle, &(3.0, 0.0)), true);
+    }
+
+
+    #[test]
     fn test_square() {
         let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
         assert_eq!(inside(&square, &(1.0, 1.0)), true);
@@ -71,5 +130,22 @@ mod test {
         assert_eq!(inside(&square, &(1.0, 2.0)), false);
         assert_eq!(inside(&square, &(2.0, 1.0)), false);
         assert_eq!(inside(&square, &(1.0, 0.0)), true);
+    }
+
+    #[test]
+    fn test_square_simd() {
+        let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
+        assert_eq!(inside_simd(&square, &(1.0, 1.0)), true);
+        assert_eq!(inside_simd(&square, &(3.0, 3.0)), false);
+
+        assert_eq!(inside_simd(&square, &(0.0, 0.0)), true);
+        assert_eq!(inside_simd(&square, &(0.0, 2.0)), false);
+        assert_eq!(inside_simd(&square, &(2.0, 2.0)), false);
+        assert_eq!(inside_simd(&square, &(2.0, 0.0)), false);
+
+        assert_eq!(inside_simd(&square, &(0.0, 1.0)), true);
+        assert_eq!(inside_simd(&square, &(1.0, 2.0)), false);
+        assert_eq!(inside_simd(&square, &(2.0, 1.0)), false);
+        assert_eq!(inside_simd(&square, &(1.0, 0.0)), true);
     }
 }
