@@ -64,20 +64,28 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             let c1 = (test.0 - vertices[i].0)
                 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
                     / (vertices[j].1 - vertices[i].1);
+            let c1_left = (test.0 - vertices[i].0);
+            let c1_right = (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                    / (vertices[j].1 - vertices[i].1);
             let cc = _mm_sub_pd(testv, curr);
             let vdiff = _mm_sub_pd(next, curr);
             let cc_diff = _mm_div_pd(cc, vdiff); // is a division by zero, that's why this all breaks down.
                                                  // c1 = lower < upper (both of cc_diff);
             let upper_at_left = _mm_permute_pd(cc_diff, 0b11);
             let c1_s = _mm_cmp_sd(cc_diff, upper_at_left, _CMP_LE_OQ);
-            let c1 = _mm_testc_pd(c1_s, c1_s) != 0;
+            let c1_f = _mm_testc_pd(c1_s, c1_s) == 0;
 
-            trace!("c1_s {}, c1: {}", pd(&c1_s), c1);
+            trace!("c1_s {}, c1_f: {}, c1: {}", pd(&c1_s), c1_f, c1);
+            trace!("c1_left {}, c1_right: {}", c1_left, c1_right);
+
+            if ((a != b) && (c1_f != c1)) {
+                panic!();
+            }
 
             // a != b condition checks if test is between a or b's y coordinate.
             // Then the 'c' condition checks on which side we are of the line.
 
-            if (a != b) && c1 {
+            if (a != b) && c1_f {
                 inside = !inside;
             }
             j = i;
