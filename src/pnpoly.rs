@@ -36,8 +36,9 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     inside
 }
 
-
 pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+    use crate::print::pd;
+    use crate::trace;
     use std::arch::x86_64::*;
     unsafe {
         let mut i = 0;
@@ -49,21 +50,29 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         while i < vertices.len() {
             let curr = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[i].0), mask);
             let next = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[j].0), mask);
-            
+            trace!("curr {}", pd(&curr));
+            trace!("next {}", pd(&next));
+
             let a = (vertices[i].1 > test.1);
             let b = (vertices[j].1 > test.1);
             let cmpa = _mm_cmp_pd(curr, testv, _CMP_GE_OQ);
             let cmpb = _mm_cmp_pd(next, testv, _CMP_GE_OQ);
+            trace!("cmpa {}, a: {}", pd(&cmpa), a);
+            trace!("cmpb {}, b: {}", pd(&cmpb), b);
             // note, only care about upper of cmpa & cmpb
             // let c1 = (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0);
-            let c1 = (test.0  - vertices[i].0) < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
+            let c1 = (test.0 - vertices[i].0)
+                < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                    / (vertices[j].1 - vertices[i].1);
             let cc = _mm_sub_pd(testv, curr);
             let vdiff = _mm_sub_pd(next, curr);
             let cc_diff = _mm_div_pd(cc, vdiff); // is a division by zero, that's why this all breaks down.
-            // c1 = lower < upper (both of cc_diff);
+                                                 // c1 = lower < upper (both of cc_diff);
             let upper_at_left = _mm_permute_pd(cc_diff, 0b11);
             let c1_s = _mm_cmp_sd(cc_diff, upper_at_left, _CMP_LE_OQ);
             let c1 = _mm_testc_pd(c1_s, c1_s) != 0;
+
+            trace!("c1_s {}, c1: {}", pd(&c1_s), c1);
 
             // a != b condition checks if test is between a or b's y coordinate.
             // Then the 'c' condition checks on which side we are of the line.
@@ -77,7 +86,6 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         inside
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -113,7 +121,6 @@ mod test {
         assert_eq!(inside_simd(&triangle, &(3.0, 2.0)), false);
         assert_eq!(inside_simd(&triangle, &(3.0, 0.0)), true);
     }
-
 
     #[test]
     fn test_square() {
