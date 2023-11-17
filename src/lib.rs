@@ -25,7 +25,7 @@ pub mod print {
         use std::arch::x86_64::_mm_storeu_pd;
         let v: [f64; 2] = [0.0; 2];
         unsafe { _mm_storeu_pd(v.as_ptr() as *mut _, *input) };
-        format!("{:?}", v)
+        format!("[{:?} ({:x?}), {:?} ({:x?})]", v[0], v[0].to_bits(), v[1], v[1].to_bits())
     }
 }
 

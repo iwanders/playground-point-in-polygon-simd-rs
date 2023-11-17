@@ -46,10 +46,15 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         // __m128d
         let mut inside = false;
         let mask = _mm_set1_epi8(-1);
+
+        let nans_v = [f64::NAN, f64::NAN];
         let testv = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&test.0), mask);
         while i < vertices.len() {
+            trace!();
             let curr = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[i].0), mask);
             let next = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&vertices[j].0), mask);
+            let nanv = _mm_maskload_pd(std::mem::transmute::<_, *const f64>(&nans_v[0]), mask);
+            trace!("testv {}", pd(&testv));
             trace!("curr {}", pd(&curr));
             trace!("next {}", pd(&next));
 
@@ -60,23 +65,61 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             trace!("cmpa {}, a: {}", pd(&cmpa), a);
             trace!("cmpb {}, b: {}", pd(&cmpb), b);
             // note, only care about upper of cmpa & cmpb
+
+            // The harder part is the actual comparison that follows:
+
             // let c1 = (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0);
             let c1 = (test.0 - vertices[i].0)
                 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
                     / (vertices[j].1 - vertices[i].1);
-            let c1_left = (test.0 - vertices[i].0);
-            let c1_right = (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
-                    / (vertices[j].1 - vertices[i].1);
-            let cc = _mm_sub_pd(testv, curr);
-            let vdiff = _mm_sub_pd(next, curr);
-            let cc_diff = _mm_div_pd(cc, vdiff); // is a division by zero, that's why this all breaks down.
-                                                 // c1 = lower < upper (both of cc_diff);
-            let upper_at_left = _mm_permute_pd(cc_diff, 0b11);
-            let c1_s = _mm_cmp_sd(cc_diff, upper_at_left, _CMP_LE_OQ);
-            let c1_f = _mm_testc_pd(c1_s, c1_s) == 0;
 
-            trace!("c1_s {}, c1_f: {}, c1: {}", pd(&c1_s), c1_f, c1);
+            // Split this;
+
+            let c1_left = (test.0 - vertices[i].0);
+            let c1_right = (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
             trace!("c1_left {}, c1_right: {}", c1_left, c1_right);
+
+            let c1_l_m = (test.0 - vertices[i].0) / (vertices[j].0 - vertices[i].0);
+            let c1_r_m = (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
+
+            trace!("c1_l_m {}, c1_r_m: {}", c1_l_m, c1_r_m);
+            let c1_from_split = c1_l_m < c1_r_m;
+            trace!("c1_l_m < c1_r_m: {}", c1_from_split);
+            trace!("c1: {}", c1);
+            if (c1 != c1_from_split) {
+                panic!("c1 and c1_from_split don't agree.");
+            }
+
+            let t_min_curr = _mm_sub_pd(testv, curr);
+            trace!("t_min_curr : {}", pd(&t_min_curr));
+
+            let v_diff = _mm_sub_pd(next, curr);
+            trace!("v_diff : {}", pd(&v_diff));
+            let cc_diff = _mm_div_pd(t_min_curr, v_diff); // is a division by zero, that's why this all breaks down.
+                                                 // c1 = lower < upper (both of cc_diff);
+            trace!("cc_diff : {}", pd(&cc_diff));
+            // Compare left with right.
+
+            // let cc_cmp_nan = _mm_cmp_sd(cc_diff, nanv, _CMP_UNORD_Q);
+            // let cc_is_nan = _mm_testc_pd(cc_cmp_nan, cc_cmp_nan);
+
+            let upper_at_both = _mm_permute_pd(cc_diff, 0b11);
+            let lower_at_both = _mm_permute_pd(cc_diff, 0b00);
+            trace!("upper_at_left : {}", pd(&upper_at_both));
+            trace!("lower_at_both : {}", pd(&lower_at_both));
+            let c1_s = _mm_cmp_sd(lower_at_both, upper_at_both, _CMP_LT_OQ);
+            trace!("c1_s : {}", pd(&c1_s)); // only care about lower in this one.
+            let c1_at_both = _mm_permute_pd(c1_s, 0b00);
+            trace!("c1_at_both : {}", pd(&c1_at_both));
+
+            // use std::arch::x86_64::_mm_storeu_pd;
+            // let v: [f64; 2] = [0.0; 2];
+            // unsafe { _mm_storeu_pd(v.as_ptr() as *mut _, c1_at_both) };
+            let c1_f = (_mm_movemask_pd(c1_s) & 0b10) != 0;
+            // let c1_f = _mm_testc_pd(c1_at_both, mask) != 0;
+            // let c1_f = v[0] == 0.0;
+            trace!("c1_f : {}, c1: {}", c1_f, c1);
+
 
             if ((a != b) && (c1_f != c1)) {
                 panic!();
