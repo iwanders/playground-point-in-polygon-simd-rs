@@ -68,16 +68,35 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 
             // The harder part is the actual comparison that follows:
 
-            // let c1 = (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0);
+            // let c1o = (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0);
+            let c1o_l = test.0;
+            let c1o_r = (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0;
             let c1 = (test.0 - vertices[i].0)
                 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
                     / (vertices[j].1 - vertices[i].1);
 
             // Split this;
+            let c1o = c1o_l < c1o_r;
+            trace!("c1o_l {}, c1o_r: {}, c1o: {}", c1o_l, c1o_r, c1o);
+            if (c1 != c1o) {
+                panic!("c1o and c1o don't agree.");
+            }
 
             let c1_left = (test.0 - vertices[i].0);
             let c1_right = (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
             trace!("c1_left {}, c1_right: {}", c1_left, c1_right);
+            if (c1o != (c1_left < c1_right)) {
+                panic!("c1o and (c1_left < c1_right) don't agree.");
+            }
+
+            // Most intriguing, writing it any other way effectively fails.
+            let d = (vertices[j].0 - vertices[i].0);
+            let c1_l_d = c1_left / d;
+            let c1_r_d = c1_right / d;
+            trace!("c1_l_d {}, c1_r_d: {}, d: {}", c1_l_d, c1_r_d, d);
+            if (c1o != (c1_l_d < c1_r_d)) {
+                panic!("c1o and (c1_l_d < c1_r_d) don't agree.");
+            }
 
             let c1_l_m = (test.0 - vertices[i].0) / (vertices[j].0 - vertices[i].0);
             let c1_r_m = (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1);
