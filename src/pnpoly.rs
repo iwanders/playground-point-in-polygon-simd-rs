@@ -317,18 +317,32 @@ mod test {
 
     #[test]
     fn test_circle_parts() {
-        let distances = [(0.0, 0.5), (0.25, 0.5), (0.5, 1.0), (0.75, 1.0)];
-        let poly = create_circle_parts(&distances);
         use rand::prelude::*;
         let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(1);
-        for _ in 0..1000 {
-            let x: f64 = rng.gen();
-            let y: f64 = rng.gen();
-            let point = (x, y);
-            let expected = inside(&poly, &point);
+        for _ in 0..100 {
+            let mut distances: Vec<(f64, f64)> = vec![];
+            let r = rng.gen::<f64>() * 100.0;
+            let mut s = 0.0;
+            distances.push((s, r * rng.gen::<f64>()));
+            let segments: usize = rng.gen_range(0..100);
+            for _ in 0..segments {
+                let sa = (1.0 / (segments as f64)) * rng.gen::<f64>();
+                s += sa;
+                if s > 1.0 {
+                    break;
+                }
+                distances.push((s, r * rng.gen::<f64>()));
+            }
+            let poly = create_circle_parts(&distances);
+            for _ in 0..1000 {
+                let x = r * 1.25 * rng.gen::<f64>();
+                let y = r * 1.25 * rng.gen::<f64>();
+                let point = (x, y);
+                let expected = inside(&poly, &point);
 
-            assert_eq!(inside_precomputed(&poly, &point), expected);
-            assert_eq!(inside_precomputed_simd(&poly, &point), expected);
+                assert_eq!(inside_precomputed(&poly, &point), expected);
+                assert_eq!(inside_precomputed_simd(&poly, &point), expected);
+            }
         }
     }
 }
