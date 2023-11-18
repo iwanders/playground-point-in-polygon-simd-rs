@@ -38,7 +38,6 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 
 struct Edge {
     iy: f64,
-    ix: f64,
     jy: f64,
     sub: f64,
     slope: f64,
@@ -56,8 +55,7 @@ impl Minimal {
             edges.push(Edge {
                 iy: vertices[i].1,
                 jy: vertices[j].1,
-                ix: vertices[i].0,
-                sub: vertices[i].0 / slope,
+                sub: -vertices[i].1 + vertices[i].0 / slope,
                 slope,
             });
             j = i;
@@ -68,8 +66,8 @@ impl Minimal {
     pub fn inside(self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
-            if (edge.iy > test.1) != (edge.jy > test.1) {
-                let c = test.0 < (((test.1 - edge.iy + edge.sub) * edge.slope));
+            if (edge.iy <= test.1) && (test.1 < edge.jy) {
+                let c = test.0 < (((test.1 + edge.sub) * edge.slope));
                 if c {
                     inside = !inside
                 }
