@@ -1,6 +1,6 @@
 pub mod print {
     #[allow(dead_code)]
-    const DO_PRINTS: bool = true;
+    pub const DO_PRINTS: bool = false;
     use std::arch::x86_64::{__m256, __m256d, __m256i};
     #[allow(dead_code)]
     /// Print a vector of m128 type.
@@ -91,7 +91,8 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     inside
 }
 
-pub fn inside_assume_closing(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+/// Simplify the start / end condition since we always have a closing point.
+pub fn inside_assume_closed(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     let mut i = 1;
     let mut j = 0;
     let mut inside = false;
@@ -108,6 +109,115 @@ pub fn inside_assume_closing(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool
         i += 1;
     }
     inside
+}
+
+/// Vectorized form without precomputation. Assumes closed.
+pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+    unsafe {
+        use print::pd;
+        use std::arch::x86_64::*;
+        let mut inside = false;
+        let mut i = 0;
+
+        // Step in fours;
+        let ty = _mm256_set1_pd(test.1);
+        let tx = _mm256_set1_pd(test.0);
+
+        const SCALE_D: i32 = 8;
+        let idx_i = _mm256_set_epi64x(3 * 2, 2 * 2, 1 * 2, 0 * 2);
+        let idx_j = _mm256_set_epi64x((3 + 1) * 2, (2 + 1) * 2, (1 + 1) * 2, (0 + 1) * 2);
+        trace!("vertices: {vertices:?}, test: {test:?}");
+        while i + (4 + 1) <= vertices.len() {
+            let base_ix = std::mem::transmute::<_, *const f64>(&vertices[i].0);
+            let base_iy = std::mem::transmute::<_, *const f64>(&vertices[i].1);
+
+            let ix = _mm256_i64gather_pd(base_ix, idx_i, SCALE_D);
+            let jx = _mm256_i64gather_pd(base_ix, idx_j, SCALE_D);
+            let iy = _mm256_i64gather_pd(base_iy, idx_i, SCALE_D);
+            let jy = _mm256_i64gather_pd(base_iy, idx_j, SCALE_D);
+            trace!("ix: {}", pd(&ix));
+            trace!("jx: {}", pd(&jx));
+            trace!("iy: {}", pd(&iy));
+            trace!("jy: {}", pd(&jy));
+
+            /*
+                if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
+                    && (test.0
+                        < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                            / (vertices[j].1 - vertices[i].1)
+                            + vertices[i].0)
+            */
+
+            //  edge.iy <= test.1
+            let above_lower = _mm256_cmp_pd(iy, ty, _CMP_LE_OQ);
+            // trace!("above_lower {}", pd(&above_lower));
+            // test.1 <= edge.jy
+            let below_upper = _mm256_cmp_pd(ty, jy, _CMP_LT_OQ);
+            // trace!("below_upper {}", pd(&below_upper));
+
+            // Or the other way around.
+            // edge.iy <= test.1 <= edge.jy
+            //
+            let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LE_OQ);
+            let inverted_coords_below_upper = _mm256_cmp_pd(ty, iy, _CMP_LT_OQ);
+
+            // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+
+            // let right = _mm256_fmadd_pd(ty, slope, sub);
+            /*
+                (vertices[j].0 - vertices[i].0) *
+                    (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0)
+                a * b / c + z
+            */
+
+            let a = _mm256_sub_pd(jx, ix);
+            let b = _mm256_sub_pd(ty, iy);
+            let c = _mm256_sub_pd(jy, iy);
+            let z = ix;
+            let bc = _mm256_div_pd(b, c);
+            let right = _mm256_fmadd_pd(a, bc, z);
+
+            let t_l_right = _mm256_cmp_pd(tx, right, _CMP_LT_OQ);
+            // trace!("t_l_right {}", pd(&t_l_right));
+            // println!("jskldfjsd");
+
+            // Now, we mask all three together.
+            let in_range = _mm256_and_pd(above_lower, below_upper);
+            let inverted_in_range =
+                _mm256_and_pd(inverted_coords_above_lower, inverted_coords_below_upper);
+            let in_range = _mm256_or_pd(in_range, inverted_in_range);
+            let crosses = _mm256_and_pd(in_range, t_l_right);
+
+            // This section could be reduced to a vertical addition, followed by a
+            // horizontal addition at the end.
+            let bits = _mm256_movemask_pd(crosses);
+            // trace!("bits: {:?}", bits);
+
+            let count = _popcnt64(bits as i64);
+            // trace!("count: {:?}", count);
+            for _ in 0..count {
+                inside = !inside
+            }
+            i += 4;
+        }
+
+        // Finish the tail if not a multiple of four.
+
+        while i < vertices.len() - 1 {
+            let j = i + 1;
+            if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
+                && (test.0
+                    < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                        / (vertices[j].1 - vertices[i].1)
+                        + vertices[i].0)
+            {
+                inside = !inside;
+            }
+            i += 1;
+        }
+
+        inside
+    }
 }
 
 // maybe
@@ -231,7 +341,7 @@ impl Precomputed {
                 // Or the other way around.
                 // edge.iy <= test.1 <= edge.jy
                 //
-                let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LT_OQ);
+                let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LE_OQ);
                 let inverted_coords_below_upper = _mm256_cmp_pd(ty, iy, _CMP_LT_OQ);
 
                 // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
@@ -335,7 +445,8 @@ mod test {
             inside,
             inside_precomputed,
             inside_precomputed_simd,
-            inside_assume_closing,
+            inside_assume_closed,
+            inside_simd,
         ] {
             let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
@@ -357,7 +468,8 @@ mod test {
             inside,
             inside_precomputed,
             inside_precomputed_simd,
-            inside_assume_closing,
+            inside_assume_closed,
+            inside_simd,
         ] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&square, &(1.0, 1.0)), true);
@@ -387,12 +499,14 @@ mod test {
         assert_eq!(inside(&poly, &point), false);
         assert_eq!(inside_precomputed(&poly, &point), false);
         assert_eq!(inside_precomputed_simd(&poly, &point), false);
-        assert_eq!(inside_assume_closing(&poly, &point), false);
+        assert_eq!(inside_assume_closed(&poly, &point), false);
+        assert_eq!(inside_simd(&poly, &point), false);
         let point = (12.230435569131824, 3.1868743396643913);
         assert_eq!(inside(&poly, &point), true);
         assert_eq!(inside_precomputed(&poly, &point), true);
         assert_eq!(inside_precomputed_simd(&poly, &point), true);
-        assert_eq!(inside_assume_closing(&poly, &point), true);
+        assert_eq!(inside_assume_closed(&poly, &point), true);
+        assert_eq!(inside_simd(&poly, &point), true);
     }
 
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
@@ -438,7 +552,8 @@ mod test {
                 // println!("Point: {point:?}");
                 assert_eq!(inside_precomputed(&poly, &point), expected);
                 assert_eq!(inside_precomputed_simd(&poly, &point), expected);
-                assert_eq!(inside_assume_closing(&poly, &point), expected);
+                assert_eq!(inside_assume_closed(&poly, &point), expected);
+                assert_eq!(inside_simd(&poly, &point), expected);
             }
         }
     }
