@@ -65,11 +65,11 @@ impl Precomputed {
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
             let slope = (vertices[j].0 - vertices[i].0) / (vertices[j].1 - vertices[i].1);
-            let lower_y = vertices[i].1.min(vertices[j].1);
-            let upper_y = vertices[j].1.max(vertices[i].1);
+            let lower_y = vertices[i].1;//.min(vertices[j].1);
+            let upper_y = vertices[j].1;//.max(vertices[i].1);
             edges.push(Edge {
                 // Min and max here to account for edges that are rising & lowering,
-                // avoids a double compare later.
+                // avoids a second compare later.
                 iy: lower_y,
                 jy: upper_y,
                 sub: -vertices[i].1 + vertices[i].0,
@@ -85,7 +85,9 @@ impl Precomputed {
     pub fn inside(self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
-            if (edge.iy <= test.1) && (test.1 < edge.jy) {
+            if ((edge.iy > test.1) != (edge.jy > test.1)) {
+            // if (edge.iy <= test.1) && (test.1 < edge.jy) {
+            // if (edge.iy <= test.1) && (test.1 < edge.jy) || ((edge.jy <= test.1) && (test.1 < edge.iy)) {
                 let c = test.0 < (test.1 * edge.slope + edge.sub);
                 if c {
                     inside = !inside
@@ -150,6 +152,12 @@ impl Precomputed {
                 let below_upper = _mm256_cmp_pd(ty, jy, _CMP_LT_OQ);
                 // trace!("below_upper {}", pd(&below_upper));
 
+                // Or the other way around.
+                // edge.iy <= test.1 <= edge.jy
+                // 
+                let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LT_OQ);
+                let inverted_coords_below_upper = _mm256_cmp_pd(ty, iy, _CMP_LT_OQ);
+
                 // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
                 let right = _mm256_fmadd_pd(ty, slope, sub);
                 let t_l_right = _mm256_cmp_pd(tx, right, _CMP_LT_OQ);
@@ -158,6 +166,8 @@ impl Precomputed {
 
                 // Now, we mask all three together.
                 let in_range = _mm256_and_pd(above_lower, below_upper);
+                let inverted_in_range = _mm256_and_pd(inverted_coords_above_lower, inverted_coords_below_upper);
+                let in_range = _mm256_or_pd(in_range, inverted_in_range);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
                 // This section could be reduced to a vertical addition, followed by a
@@ -239,5 +249,44 @@ mod test {
             assert_eq!(f(&square, &(2.0, 1.0)), false);
             assert_eq!(f(&square, &(1.0, 0.0)), true);
         }
+    }
+
+    // Something to create a polygon from polar coordinates, that way it always a valid polygon.
+    fn create_circle_parts(segments: &[(f64, f64)]) -> Vec<(f64, f64)> {
+        let mut v = Vec::<(f64, f64)>::new();
+        for i in 0..segments.len() - 1 {
+            let c = &segments[i];
+            let n = &segments[i + 1];
+            let theta_c = c.0 * std::f64::consts::PI * 2.0;
+            let theta_n = n.0 * std::f64::consts::PI * 2.0;
+            let r_c = c.1;
+            let r_n = n.1;
+            v.push((theta_c.cos() * r_c, theta_c.sin() * r_c));
+            v.push((theta_n.cos() * r_n, theta_n.sin() * r_n));
+        }
+        // Closing point.
+        v.push((segments[0].0.cos() * segments[0].1, segments[0].0.sin() * segments[0].1));
+        // v.reverse();
+        v
+    }
+
+    #[test]
+    fn test_circle_parts() {
+        let distances = [(0.0, 0.5),  (0.25, 0.5), (0.5, 1.0), (0.75, 1.0)];
+        let poly = create_circle_parts(&distances);
+        use rand::prelude::*;
+        let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(1);
+        for _ in 0..10 {
+            let x: f64 = rng.gen();
+            let y: f64 = rng.gen();
+            let point = (x, y);
+            let expected = inside(&poly, &point);
+            crate::trace!("Point: {:?}, exp: {}", point, expected);
+
+            assert_eq!(inside_precomputed(&poly, &point), expected);
+            assert_eq!(inside_precomputed_simd(&poly, &point), expected);            
+        }
+        
+        
     }
 }
