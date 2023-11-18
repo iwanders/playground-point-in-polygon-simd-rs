@@ -19,14 +19,17 @@ int pnpoly(int nvert, float *vertx, float *verty, float testx, float testy)
 }
 */
 
+/// Purest form of Franklin, exactly from the original logic.
 pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     let mut i = 0;
     let mut j = vertices.len() - 1;
     let mut inside = false;
     while i < vertices.len() {
-        if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1)) &&
-            // (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
-            (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0)
+        if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
+            && (test.0
+                < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                    / (vertices[j].1 - vertices[i].1)
+                    + vertices[i].0)
         {
             inside = !inside;
         }
@@ -41,32 +44,44 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 // https://en.wikipedia.org/wiki/Segment_tree
 #[repr(C)]
 struct Edge {
+    /// Lower y coordinate of current slope.
     iy: f64,
+    /// Upper y coordinate of current slope.
     jy: f64,
+    /// Subtraction for right hand compare.
     sub: f64,
+    /// Slope for the right hand multiplication with y coordinate.
     slope: f64,
 }
-pub struct Minimal {
+
+/// Precomputed version of Franklin
+pub struct Precomputed {
     edges: Vec<Edge>,
 }
-impl Minimal {
+impl Precomputed {
     pub fn new(vertices: &[(f64, f64)]) -> Self {
         let mut edges: Vec<Edge> = vec![];
         let mut i = 0;
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
             let slope = (vertices[j].0 - vertices[i].0) / (vertices[j].1 - vertices[i].1);
+            let lower_y = vertices[i].1.min(vertices[j].1);
+            let upper_y = vertices[j].1.max(vertices[i].1);
             edges.push(Edge {
-                iy: vertices[i].1,
-                jy: vertices[j].1,
+                // Min and max here to account for edges that are rising & lowering,
+                // avoids a double compare later.
+                iy: lower_y,
+                jy: upper_y,
                 sub: -vertices[i].1 + vertices[i].0,
                 slope,
             });
             j = i;
             i += 1;
         }
-        Minimal { edges }
+        Self { edges }
     }
+
+    /// Simple inside check, iterating through the edges.
     pub fn inside(self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
@@ -80,6 +95,7 @@ impl Minimal {
         inside
     }
 
+    /// SIMD inside check, iterating through edges in steps of four.
     pub fn inside_simd(self, test: &(f64, f64)) -> bool {
         use crate::print::pd;
         use crate::trace;
@@ -120,7 +136,6 @@ impl Minimal {
             let tx = _mm256_set1_pd(test.0);
             while i + 4 < self.edges.len() {
                 let e = &self.edges[i..i + 4];
-                // _m256d _mm256_set1_pd (double a)
                 // Could do a gather here, but lets get this working and then just make the struct
                 // axis first instead of vertex first.
                 let iy = _mm256_set_pd(e[3].iy, e[2].iy, e[1].iy, e[0].iy);
@@ -145,6 +160,8 @@ impl Minimal {
                 let in_range = _mm256_and_pd(above_lower, below_upper);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
+                // This section could be reduced to a vertical addition, followed by a
+                // horizontal addition at the end.
                 let bits = _mm256_movemask_pd(crosses);
                 // trace!("bits: {:?}", bits);
 
@@ -155,10 +172,9 @@ impl Minimal {
                 }
 
                 i += 4;
-                // break;
             }
 
-            // Finish the tail.
+            // Finish the tail if not a multiple of four.
             while i < self.edges.len() {
                 let edge = &self.edges[i];
                 if (edge.iy <= test.1) && (test.1 < edge.jy) {
@@ -180,18 +196,18 @@ mod test {
     use super::*;
     // https://github.com/boostorg/geometry/blob/3f5c044abcc813a36d6af83465a9c086f9728a2f/test/strategies/franklin.cpp
 
-    fn inside_minimal(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
-        let z = Minimal::new(vertices);
+    fn inside_precomputed(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+        let z = Precomputed::new(vertices);
         z.inside(test)
     }
-    fn inside_minimal_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
-        let z = Minimal::new(vertices);
+    fn inside_precomputed_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+        let z = Precomputed::new(vertices);
         z.inside_simd(test)
     }
 
     #[test]
     fn test_triangle() {
-        for f in [inside, inside_minimal, inside_minimal_simd] {
+        for f in [inside, inside_precomputed, inside_precomputed_simd] {
             let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
             assert_eq!(f(&triangle, &(3.0, 3.0)), false);
@@ -208,7 +224,7 @@ mod test {
 
     #[test]
     fn test_square() {
-        for f in [inside, inside_minimal, inside_minimal_simd] {
+        for f in [inside, inside_precomputed, inside_precomputed_simd] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&square, &(1.0, 1.0)), true);
             assert_eq!(f(&square, &(3.0, 3.0)), false);
