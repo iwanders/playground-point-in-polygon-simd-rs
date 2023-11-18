@@ -39,6 +39,7 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 // maybe
 // https://en.wikipedia.org/wiki/Interval_tree
 // https://en.wikipedia.org/wiki/Segment_tree
+#[repr(C)]
 struct Edge {
     iy: f64,
     jy: f64,
@@ -54,23 +55,23 @@ impl Minimal {
         let mut i = 0;
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
-            let slope = (vertices[j].0 - vertices[i].0) /  (vertices[j].1 - vertices[i].1);
+            let slope = (vertices[j].0 - vertices[i].0) / (vertices[j].1 - vertices[i].1);
             edges.push(Edge {
                 iy: vertices[i].1,
                 jy: vertices[j].1,
-                sub: -vertices[i].1 + vertices[i].0 / slope,
+                sub: -vertices[i].1 + vertices[i].0,
                 slope,
             });
             j = i;
             i += 1;
         }
-        Minimal{edges}
+        Minimal { edges }
     }
     pub fn inside(self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
             if (edge.iy <= test.1) && (test.1 < edge.jy) {
-                let c = test.0 < (((test.1 + edge.sub) * edge.slope));
+                let c = test.0 < (test.1 * edge.slope + edge.sub);
                 if c {
                     inside = !inside
                 }
@@ -78,28 +79,99 @@ impl Minimal {
         }
         inside
     }
-}
+
+    pub fn inside_simd(self, test: &(f64, f64)) -> bool {
+        use crate::print::pd;
+        use crate::trace;
+        use std::arch::x86_64::*;
+        // Now, we think.
+        /*
+            if (edge.iy <= test.1) && (test.1 < edge.jy)
+            let c = test.0 < (((test.1 + edge.sub) * edge.slope));
 
 
-pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
-    use crate::print::pd;
-    use crate::trace;
-    use std::arch::x86_64::*;
-    unsafe {
-        let mut i = 0;
-        let mut j = vertices.len() - 1;
-        let mut inside = false;
-        while i < vertices.len() {
-            if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1)) &&
-                // (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
-                (test.0 < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1) / (vertices[j].1 - vertices[i].1) + vertices[i].0)
-            {
-                inside = !inside;
+            // Also ok;
+            if (edge.iy <= test.1) && (test.1 <= edge.jy)
+            let c = test.0 < (((test.1 + edge.sub) * edge.slope));
+
+
+            // then rewrite as fmadd; _mm256_fmadd_pd
+            if (edge.iy <= test.1) && (test.1 <= edge.jy)
+                let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+
+            edge;
+                iy: f64,
+                jy: f64,
+                sub: f64,
+                slope: f64,
+
+            // So now we have:
+                edge.iy <= test.1
+                test.1 <= edge.jy
+                let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+        */
+
+        unsafe {
+            let mut inside = false;
+            let mut i = 0;
+
+            // Step in fours;
+            let ty = _mm256_set1_pd(test.1);
+            let tx = _mm256_set1_pd(test.0);
+            while i + 4 < self.edges.len() {
+                let e = &self.edges[i..i + 4];
+                // _m256d _mm256_set1_pd (double a)
+                // Could do a gather here, but lets get this working and then just make the struct
+                // axis first instead of vertex first.
+                let iy = _mm256_set_pd(e[3].iy, e[2].iy, e[1].iy, e[0].iy);
+                let jy = _mm256_set_pd(e[3].jy, e[2].jy, e[1].jy, e[0].jy);
+                let sub = _mm256_set_pd(e[3].sub, e[2].sub, e[1].sub, e[0].sub);
+                let slope = _mm256_set_pd(e[3].slope, e[2].slope, e[1].slope, e[0].slope);
+
+                //  edge.iy <= test.1
+                let above_lower = _mm256_cmp_pd(iy, ty, _CMP_LE_OQ);
+                // trace!("above_lower {}", pd(&above_lower));
+                // test.1 <= edge.jy
+                let below_upper = _mm256_cmp_pd(ty, jy, _CMP_LT_OQ);
+                // trace!("below_upper {}", pd(&below_upper));
+
+                // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+                let right = _mm256_fmadd_pd(ty, slope, sub);
+                let t_l_right = _mm256_cmp_pd(tx, right, _CMP_LT_OQ);
+                // trace!("t_l_right {}", pd(&t_l_right));
+                // println!("jskldfjsd");
+
+                // Now, we mask all three together.
+                let in_range = _mm256_and_pd(above_lower, below_upper);
+                let crosses = _mm256_and_pd(in_range, t_l_right);
+
+                let bits = _mm256_movemask_pd(crosses);
+                // trace!("bits: {:?}", bits);
+
+                let count = _popcnt64(bits as i64);
+                // trace!("count: {:?}", count);
+                for _ in 0..count {
+                    inside = !inside
+                }
+
+                i += 4;
+                // break;
             }
-            j = i;
-            i += 1;
+
+            // Finish the tail.
+            while i < self.edges.len() {
+                let edge = &self.edges[i];
+                if (edge.iy <= test.1) && (test.1 < edge.jy) {
+                    let c = test.0 < (test.1 * edge.slope + edge.sub);
+                    if c {
+                        inside = !inside
+                    }
+                }
+                i += 1;
+            }
+
+            inside
         }
-        inside
     }
 }
 
@@ -112,10 +184,14 @@ mod test {
         let z = Minimal::new(vertices);
         z.inside(test)
     }
+    fn inside_minimal_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+        let z = Minimal::new(vertices);
+        z.inside_simd(test)
+    }
 
     #[test]
     fn test_triangle() {
-        for f in [inside, inside_minimal] {
+        for f in [inside, inside_minimal, inside_minimal_simd] {
             let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
             assert_eq!(f(&triangle, &(3.0, 3.0)), false);
@@ -130,24 +206,22 @@ mod test {
         }
     }
 
-
     #[test]
     fn test_square() {
-        for f in [inside, inside_minimal] {
+        for f in [inside, inside_minimal, inside_minimal_simd] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
-            assert_eq!(inside(&square, &(1.0, 1.0)), true);
-            assert_eq!(inside(&square, &(3.0, 3.0)), false);
+            assert_eq!(f(&square, &(1.0, 1.0)), true);
+            assert_eq!(f(&square, &(3.0, 3.0)), false);
 
-            assert_eq!(inside(&square, &(0.0, 0.0)), true);
-            assert_eq!(inside(&square, &(0.0, 2.0)), false);
-            assert_eq!(inside(&square, &(2.0, 2.0)), false);
-            assert_eq!(inside(&square, &(2.0, 0.0)), false);
+            assert_eq!(f(&square, &(0.0, 0.0)), true);
+            assert_eq!(f(&square, &(0.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 0.0)), false);
 
-            assert_eq!(inside(&square, &(0.0, 1.0)), true);
-            assert_eq!(inside(&square, &(1.0, 2.0)), false);
-            assert_eq!(inside(&square, &(2.0, 1.0)), false);
-            assert_eq!(inside(&square, &(1.0, 0.0)), true);
+            assert_eq!(f(&square, &(0.0, 1.0)), true);
+            assert_eq!(f(&square, &(1.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 1.0)), false);
+            assert_eq!(f(&square, &(1.0, 0.0)), true);
         }
     }
-
 }

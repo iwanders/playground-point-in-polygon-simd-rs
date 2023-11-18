@@ -25,12 +25,17 @@ pub mod print {
         use std::arch::x86_64::_mm256_storeu_pd;
         let v: [f64; 4] = [0.0; 4];
         unsafe { _mm256_storeu_pd(v.as_ptr() as *mut _, *input) };
-        format!("[{:?} ({:x?}), {:?} ({:x?}), {:?} ({:x?}), {:?} ({:x?})]",
-                v[0], v[0].to_bits(),
-                v[1], v[1].to_bits(),
-                v[2], v[2].to_bits(),
-                v[3], v[3].to_bits(),
-                )
+        format!(
+            "[{:?} ({:x?}), {:?} ({:x?}), {:?} ({:x?}), {:?} ({:x?})]",
+            v[0],
+            v[0].to_bits(),
+            v[1],
+            v[1].to_bits(),
+            v[2],
+            v[2].to_bits(),
+            v[3],
+            v[3].to_bits(),
+        )
     }
 }
 
