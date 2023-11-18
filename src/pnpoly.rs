@@ -58,8 +58,6 @@ pub fn inside_assume_closing(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool
     inside
 }
 
-
-
 // maybe
 // https://en.wikipedia.org/wiki/Interval_tree
 // https://en.wikipedia.org/wiki/Segment_tree
@@ -281,7 +279,12 @@ mod test {
 
     #[test]
     fn test_triangle() {
-        for f in [inside, inside_precomputed, inside_precomputed_simd, inside_assume_closing] {
+        for f in [
+            inside,
+            inside_precomputed,
+            inside_precomputed_simd,
+            inside_assume_closing,
+        ] {
             let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
             assert_eq!(f(&triangle, &(3.0, 3.0)), false);
@@ -298,7 +301,12 @@ mod test {
 
     #[test]
     fn test_square() {
-        for f in [inside, inside_precomputed, inside_precomputed_simd, inside_assume_closing] {
+        for f in [
+            inside,
+            inside_precomputed,
+            inside_precomputed_simd,
+            inside_assume_closing,
+        ] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&square, &(1.0, 1.0)), true);
             assert_eq!(f(&square, &(3.0, 3.0)), false);
@@ -317,7 +325,12 @@ mod test {
 
     #[test]
     fn test_polygon_found_with_closing_removal() {
-        let poly = vec![(46.737189787317114, 0.0), (-5.487807116126276, 16.463760906592245), (-1.9544451225548618, 1.027559503579469), (46.737189787317114, 0.0)];
+        let poly = vec![
+            (46.737189787317114, 0.0),
+            (-5.487807116126276, 16.463760906592245),
+            (-1.9544451225548618, 1.027559503579469),
+            (46.737189787317114, 0.0),
+        ];
         let point = (54.57356785726406, 85.87822568825256);
         assert_eq!(inside(&poly, &point), false);
         assert_eq!(inside_precomputed(&poly, &point), false);
@@ -333,13 +346,9 @@ mod test {
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
     fn create_circle_parts(segments: &[(f64, f64)]) -> Vec<(f64, f64)> {
         let mut v = Vec::<(f64, f64)>::new();
-        for i in 0..segments.len() - 1 {
-            let c = &segments[i];
-            let n = &segments[i + 1];
-            let theta_c = c.0 * std::f64::consts::PI * 2.0;
-            let theta_n = n.0 * std::f64::consts::PI * 2.0;
-            let r_c = c.1;
-            let r_n = n.1;
+        for segment in segments.iter() {
+            let theta_c = segment.0 * std::f64::consts::PI * 2.0;
+            let r_c = segment.1;
             v.push((theta_c.cos() * r_c, theta_c.sin() * r_c));
         }
         // Closing point.
@@ -368,16 +377,16 @@ mod test {
                 distances.push((s, r * rng.gen::<f64>()));
             }
             let poly = create_circle_parts(&distances);
-            println!("Poly: {poly:?}");
+            // println!("Poly: {poly:?}");
             for _ in 0..1000 {
                 let x = r * 1.25 * rng.gen::<f64>();
                 let y = r * 1.25 * rng.gen::<f64>();
                 let point = (x, y);
                 let expected = inside(&poly, &point);
-                println!("Point: {point:?}");
+                // println!("Point: {point:?}");
                 assert_eq!(inside_precomputed(&poly, &point), expected);
                 assert_eq!(inside_precomputed_simd(&poly, &point), expected);
-                // assert_eq!(inside_assume_closing(&poly, &point), expected);
+                assert_eq!(inside_assume_closing(&poly, &point), expected);
             }
         }
     }
