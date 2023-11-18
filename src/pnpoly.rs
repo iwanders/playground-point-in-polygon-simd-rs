@@ -52,6 +52,10 @@ struct Edge {
     sub: f64,
     /// Slope for the right hand multiplication with y coordinate.
     slope: f64,
+
+    // Only for debugging
+    vi: (f64, f64),
+    vj: (f64, f64),
 }
 
 /// Precomputed version of Franklin
@@ -65,15 +69,17 @@ impl Precomputed {
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
             let slope = (vertices[j].0 - vertices[i].0) / (vertices[j].1 - vertices[i].1);
-            let lower_y = vertices[i].1;//.min(vertices[j].1);
-            let upper_y = vertices[j].1;//.max(vertices[i].1);
+            let lower_y = vertices[i].1; //.min(vertices[j].1);
+            let upper_y = vertices[j].1; //.max(vertices[i].1);
             edges.push(Edge {
                 // Min and max here to account for edges that are rising & lowering,
                 // avoids a second compare later.
                 iy: lower_y,
                 jy: upper_y,
-                sub: -vertices[i].1 + vertices[i].0,
+                sub: -vertices[i].1 * slope + vertices[i].0,
                 slope,
+                vi: vertices[i],
+                vj: vertices[j],
             });
             j = i;
             i += 1;
@@ -85,9 +91,7 @@ impl Precomputed {
     pub fn inside(self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
-            if ((edge.iy > test.1) != (edge.jy > test.1)) {
-            // if (edge.iy <= test.1) && (test.1 < edge.jy) {
-            // if (edge.iy <= test.1) && (test.1 < edge.jy) || ((edge.jy <= test.1) && (test.1 < edge.iy)) {
+            if (edge.iy > test.1) != (edge.jy > test.1) {
                 let c = test.0 < (test.1 * edge.slope + edge.sub);
                 if c {
                     inside = !inside
@@ -154,7 +158,7 @@ impl Precomputed {
 
                 // Or the other way around.
                 // edge.iy <= test.1 <= edge.jy
-                // 
+                //
                 let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LT_OQ);
                 let inverted_coords_below_upper = _mm256_cmp_pd(ty, iy, _CMP_LT_OQ);
 
@@ -166,7 +170,8 @@ impl Precomputed {
 
                 // Now, we mask all three together.
                 let in_range = _mm256_and_pd(above_lower, below_upper);
-                let inverted_in_range = _mm256_and_pd(inverted_coords_above_lower, inverted_coords_below_upper);
+                let inverted_in_range =
+                    _mm256_and_pd(inverted_coords_above_lower, inverted_coords_below_upper);
                 let in_range = _mm256_or_pd(in_range, inverted_in_range);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
@@ -206,6 +211,43 @@ mod test {
     use super::*;
     // https://github.com/boostorg/geometry/blob/3f5c044abcc813a36d6af83465a9c086f9728a2f/test/strategies/franklin.cpp
 
+    #[test]
+    fn test_single_edge() {
+        let vi = (3.061616997868383e-17, 0.5);
+        let vj = (0.5, 0.0);
+        let test = (0.1449590873681229, 0.05982148134111476);
+
+        let a = vi.1 > test.1;
+        let b = vj.1 > test.1;
+        let cr = (vj.0 - vi.0) * (test.1 - vi.1) / (vj.1 - vi.1) + vi.0;
+        // crate::trace!("cr: {cr:?}");
+        let c = test.0 < cr;
+        assert_eq!(a, true);
+        assert_eq!(b, false);
+        assert_eq!(c, true);
+
+        // now test the slope decomposed flavour.
+        /*
+            let cr = (vj.0 - vi.0) * (test.1 - vi.1) / (vj.1 - vi.1) + vi.0;
+            let cr = (jx - ix) * (ty - iy) / (jy - iy) + ix;
+        */
+
+        let slope = (vj.0 - vi.0) / (vj.1 - vi.1);
+        // crate::trace!("slope: {slope:?}");
+        let lower_y = vi.1;
+        let upper_y = vj.1;
+        let sub = -vi.1 * slope + vi.0;
+        // crate::trace!("sub: {sub:?}");
+        let iy = lower_y;
+        let jy = upper_y;
+
+        let a = iy > test.1;
+        let b = jy > test.1;
+        let c = test.0 < (test.1 * slope + sub);
+        assert_eq!(a, true);
+        assert_eq!(b, false);
+        assert_eq!(c, true);
+    }
     fn inside_precomputed(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         let z = Precomputed::new(vertices);
         z.inside(test)
@@ -265,28 +307,28 @@ mod test {
             v.push((theta_n.cos() * r_n, theta_n.sin() * r_n));
         }
         // Closing point.
-        v.push((segments[0].0.cos() * segments[0].1, segments[0].0.sin() * segments[0].1));
+        v.push((
+            segments[0].0.cos() * segments[0].1,
+            segments[0].0.sin() * segments[0].1,
+        ));
         // v.reverse();
         v
     }
 
     #[test]
     fn test_circle_parts() {
-        let distances = [(0.0, 0.5),  (0.25, 0.5), (0.5, 1.0), (0.75, 1.0)];
+        let distances = [(0.0, 0.5), (0.25, 0.5), (0.5, 1.0), (0.75, 1.0)];
         let poly = create_circle_parts(&distances);
         use rand::prelude::*;
         let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(1);
-        for _ in 0..10 {
+        for _ in 0..1000 {
             let x: f64 = rng.gen();
             let y: f64 = rng.gen();
             let point = (x, y);
             let expected = inside(&poly, &point);
-            crate::trace!("Point: {:?}, exp: {}", point, expected);
 
             assert_eq!(inside_precomputed(&poly, &point), expected);
-            assert_eq!(inside_precomputed_simd(&poly, &point), expected);            
+            assert_eq!(inside_precomputed_simd(&poly, &point), expected);
         }
-        
-        
     }
 }
