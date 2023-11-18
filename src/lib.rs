@@ -202,7 +202,7 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         }
 
         // Finish the tail if not a multiple of four.
-
+        
         while i < vertices.len() - 1 {
             let j = i + 1;
             if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
@@ -219,6 +219,7 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         inside
     }
 }
+
 
 // maybe
 // https://en.wikipedia.org/wiki/Interval_tree
@@ -527,7 +528,10 @@ mod test {
     fn test_circle_parts() {
         // return;
         use rand::prelude::*;
-        let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(1);
+
+        use rand_xoshiro::rand_core::{SeedableRng};
+        use rand_xoshiro::Xoshiro256PlusPlus;
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(1);
         for _ in 0..100 {
             let mut distances: Vec<(f64, f64)> = vec![];
             let r = rng.gen::<f64>() * 100.0;
