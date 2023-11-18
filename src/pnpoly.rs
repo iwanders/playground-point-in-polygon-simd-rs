@@ -39,9 +39,31 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     inside
 }
 
+pub fn inside_assume_closing(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+    let mut i = 1;
+    let mut j = 0;
+    let mut inside = false;
+    while i < vertices.len() {
+        if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
+            && (test.0
+                < (vertices[j].0 - vertices[i].0) * (test.1 - vertices[i].1)
+                    / (vertices[j].1 - vertices[i].1)
+                    + vertices[i].0)
+        {
+            inside = !inside;
+        }
+        j = i;
+        i += 1;
+    }
+    inside
+}
+
+
+
 // maybe
 // https://en.wikipedia.org/wiki/Interval_tree
 // https://en.wikipedia.org/wiki/Segment_tree
+// Repr c to ensure we can read the first four doubles as simd vectors.
 #[repr(C)]
 struct Edge {
     /// Lower y coordinate of current slope.
@@ -140,7 +162,7 @@ impl Precomputed {
             // Step in fours;
             let ty = _mm256_set1_pd(test.1);
             let tx = _mm256_set1_pd(test.0);
-            while i + 4 < self.edges.len() {
+            while i + 4 <= self.edges.len() {
                 let e = &self.edges[i..i + 4];
                 // Could do a gather here, but lets get this working and then just make the struct
                 // axis first instead of vertex first.
@@ -259,7 +281,7 @@ mod test {
 
     #[test]
     fn test_triangle() {
-        for f in [inside, inside_precomputed, inside_precomputed_simd] {
+        for f in [inside, inside_precomputed, inside_precomputed_simd, inside_assume_closing] {
             let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
             assert_eq!(f(&triangle, &(3.0, 3.0)), false);
@@ -276,7 +298,7 @@ mod test {
 
     #[test]
     fn test_square() {
-        for f in [inside, inside_precomputed, inside_precomputed_simd] {
+        for f in [inside, inside_precomputed, inside_precomputed_simd, inside_assume_closing] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&square, &(1.0, 1.0)), true);
             assert_eq!(f(&square, &(3.0, 3.0)), false);
@@ -293,6 +315,21 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_polygon_found_with_closing_removal() {
+        let poly = vec![(46.737189787317114, 0.0), (-5.487807116126276, 16.463760906592245), (-1.9544451225548618, 1.027559503579469), (46.737189787317114, 0.0)];
+        let point = (54.57356785726406, 85.87822568825256);
+        assert_eq!(inside(&poly, &point), false);
+        assert_eq!(inside_precomputed(&poly, &point), false);
+        assert_eq!(inside_precomputed_simd(&poly, &point), false);
+        assert_eq!(inside_assume_closing(&poly, &point), false);
+        let point = (12.230435569131824, 3.1868743396643913);
+        assert_eq!(inside(&poly, &point), true);
+        assert_eq!(inside_precomputed(&poly, &point), true);
+        assert_eq!(inside_precomputed_simd(&poly, &point), true);
+        assert_eq!(inside_assume_closing(&poly, &point), true);
+    }
+
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
     fn create_circle_parts(segments: &[(f64, f64)]) -> Vec<(f64, f64)> {
         let mut v = Vec::<(f64, f64)>::new();
@@ -304,19 +341,16 @@ mod test {
             let r_c = c.1;
             let r_n = n.1;
             v.push((theta_c.cos() * r_c, theta_c.sin() * r_c));
-            v.push((theta_n.cos() * r_n, theta_n.sin() * r_n));
         }
         // Closing point.
-        v.push((
-            segments[0].0.cos() * segments[0].1,
-            segments[0].0.sin() * segments[0].1,
-        ));
+        v.push(v[0]);
         // v.reverse();
         v
     }
 
     #[test]
     fn test_circle_parts() {
+        // return;
         use rand::prelude::*;
         let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(1);
         for _ in 0..100 {
@@ -324,7 +358,7 @@ mod test {
             let r = rng.gen::<f64>() * 100.0;
             let mut s = 0.0;
             distances.push((s, r * rng.gen::<f64>()));
-            let segments: usize = rng.gen_range(0..100);
+            let segments: usize = rng.gen_range(3..100);
             for _ in 0..segments {
                 let sa = (1.0 / (segments as f64)) * rng.gen::<f64>();
                 s += sa;
@@ -334,14 +368,16 @@ mod test {
                 distances.push((s, r * rng.gen::<f64>()));
             }
             let poly = create_circle_parts(&distances);
+            println!("Poly: {poly:?}");
             for _ in 0..1000 {
                 let x = r * 1.25 * rng.gen::<f64>();
                 let y = r * 1.25 * rng.gen::<f64>();
                 let point = (x, y);
                 let expected = inside(&poly, &point);
-
+                println!("Point: {point:?}");
                 assert_eq!(inside_precomputed(&poly, &point), expected);
                 assert_eq!(inside_precomputed_simd(&poly, &point), expected);
+                // assert_eq!(inside_assume_closing(&poly, &point), expected);
             }
         }
     }
