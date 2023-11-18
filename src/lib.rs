@@ -1,7 +1,6 @@
-
-
-
 pub mod print {
+    #[allow(dead_code)]
+    const DO_PRINTS: bool = true;
     use std::arch::x86_64::{__m256, __m256d, __m256i};
     #[allow(dead_code)]
     /// Print a vector of m128 type.
@@ -40,15 +39,12 @@ pub mod print {
     }
 }
 
-const DO_PRINTS: bool = true;
-
 #[allow(unused_macros)]
-#[macro_export]
 /// Helper print macro that can be enabled or disabled.
 macro_rules! trace {
-    () => (if crate::DO_PRINTS {println!("\n");});
+    () => (if crate::print::DO_PRINTS {println!("\n");});
     ($($arg:tt)*) => {
-        if crate::DO_PRINTS {
+        if crate::print::DO_PRINTS {
             println!($($arg)*);
         }
     }
@@ -179,8 +175,8 @@ impl Precomputed {
 
     /// SIMD inside check, iterating through edges in steps of four.
     pub fn inside_simd(self, test: &(f64, f64)) -> bool {
-        use print::pd;
-        use trace;
+        // use print::pd;
+        // use trace;
         use std::arch::x86_64::*;
         // Now, we think.
         /*
