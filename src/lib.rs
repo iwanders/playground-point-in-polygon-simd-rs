@@ -391,7 +391,10 @@ impl Precomputed {
 #[cfg(test)]
 mod test {
     use super::*;
+    // Square and triangle from:
     // https://github.com/boostorg/geometry/blob/3f5c044abcc813a36d6af83465a9c086f9728a2f/test/strategies/franklin.cpp
+
+    // https://www.desmos.com/calculator is helpful, rust debug prints can be pasted there.
 
     #[test]
     fn test_single_edge() {
@@ -519,7 +522,6 @@ mod test {
         }
         // Closing point.
         v.push(v[0]);
-        // v.reverse();
         v
     }
 
