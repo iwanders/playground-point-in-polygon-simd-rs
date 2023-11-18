@@ -36,13 +36,16 @@ pub fn inside(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     inside
 }
 
+// maybe
+// https://en.wikipedia.org/wiki/Interval_tree
+// https://en.wikipedia.org/wiki/Segment_tree
 struct Edge {
     iy: f64,
     jy: f64,
     sub: f64,
     slope: f64,
 }
-struct Minimal {
+pub struct Minimal {
     edges: Vec<Edge>,
 }
 impl Minimal {
@@ -130,19 +133,21 @@ mod test {
 
     #[test]
     fn test_square() {
-        let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
-        assert_eq!(inside(&square, &(1.0, 1.0)), true);
-        assert_eq!(inside(&square, &(3.0, 3.0)), false);
+        for f in [inside, inside_minimal] {
+            let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
+            assert_eq!(inside(&square, &(1.0, 1.0)), true);
+            assert_eq!(inside(&square, &(3.0, 3.0)), false);
 
-        assert_eq!(inside(&square, &(0.0, 0.0)), true);
-        assert_eq!(inside(&square, &(0.0, 2.0)), false);
-        assert_eq!(inside(&square, &(2.0, 2.0)), false);
-        assert_eq!(inside(&square, &(2.0, 0.0)), false);
+            assert_eq!(inside(&square, &(0.0, 0.0)), true);
+            assert_eq!(inside(&square, &(0.0, 2.0)), false);
+            assert_eq!(inside(&square, &(2.0, 2.0)), false);
+            assert_eq!(inside(&square, &(2.0, 0.0)), false);
 
-        assert_eq!(inside(&square, &(0.0, 1.0)), true);
-        assert_eq!(inside(&square, &(1.0, 2.0)), false);
-        assert_eq!(inside(&square, &(2.0, 1.0)), false);
-        assert_eq!(inside(&square, &(1.0, 0.0)), true);
+            assert_eq!(inside(&square, &(0.0, 1.0)), true);
+            assert_eq!(inside(&square, &(1.0, 2.0)), false);
+            assert_eq!(inside(&square, &(2.0, 1.0)), false);
+            assert_eq!(inside(&square, &(1.0, 0.0)), true);
+        }
     }
 
 }
