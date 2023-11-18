@@ -40,6 +40,7 @@ struct Edge {
     iy: f64,
     ix: f64,
     jy: f64,
+    sub: f64,
     slope: f64,
 }
 struct Minimal {
@@ -51,11 +52,13 @@ impl Minimal {
         let mut i = 0;
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
+            let slope = (vertices[j].0 - vertices[i].0) /  (vertices[j].1 - vertices[i].1);
             edges.push(Edge {
                 iy: vertices[i].1,
                 jy: vertices[j].1,
                 ix: vertices[i].0,
-                slope: ((vertices[j].0 - vertices[i].0) /  (vertices[j].1 - vertices[i].1)),
+                sub: vertices[i].0 / slope,
+                slope,
             });
             j = i;
             i += 1;
@@ -66,7 +69,7 @@ impl Minimal {
         let mut inside = false;
         for edge in self.edges.iter() {
             if (edge.iy > test.1) != (edge.jy > test.1) {
-                let c = test.0 < (((test.1 - edge.iy) * edge.slope) + edge.ix);
+                let c = test.0 < (((test.1 - edge.iy + edge.sub) * edge.slope));
                 if c {
                     inside = !inside
                 }
