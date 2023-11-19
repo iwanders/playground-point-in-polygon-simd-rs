@@ -296,13 +296,28 @@ struct Edge {
     vj: (f64, f64),
 }
 
+// Instead of 4 indepent vectors, we still interleave the individual chunks, that way the
+// values we are loading into simd vectors are likely in the cache after the first iy read.
+#[repr(C)]
+#[derive(Default)]
+struct EdgeVector {
+    iy: [f64; 4],
+    jy: [f64; 4],
+    sub: [f64; 4],
+    slope: [f64; 4],
+}
+
 /// Precomputed version of Franklin
 pub struct Precomputed {
     edges: Vec<Edge>,
+    edge_v: Vec<EdgeVector>,
 }
 impl Precomputed {
     pub fn new(vertices: &[(f64, f64)]) -> Self {
         let mut edges: Vec<Edge> = vec![];
+        let mut edge_v: Vec<EdgeVector> = vec![];
+        edge_v.push(Default::default());
+
         let mut i = 0;
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
@@ -319,10 +334,19 @@ impl Precomputed {
                 vi: vertices[i],
                 vj: vertices[j],
             });
+            edge_v[i / 4].iy[i % 4] = lower_y;
+            edge_v[i / 4].jy[i % 4] = upper_y;
+            edge_v[i / 4].sub[i % 4] = -vertices[i].1 * slope + vertices[i].0;
+            edge_v[i / 4].slope[i % 4] = slope;
             j = i;
             i += 1;
+            if i % 4 == 0 {
+                edge_v.push(Default::default());
+            }
         }
-        Self { edges }
+    
+
+        Self { edges, edge_v }
     }
 
     /// Simple inside check, iterating through the edges.
@@ -379,13 +403,13 @@ impl Precomputed {
             let tx = _mm256_set1_pd(test.0);
             let mut crossings_totals = _mm256_set_epi64x(0, 0, 0, 0);
             while i + 4 <= self.edges.len() {
-                let e = &self.edges[i..i + 4];
+                let e = &self.edge_v[i / 4];
                 // Could do a gather here, but lets get this working and then just make the struct
                 // axis first instead of vertex first.
-                let iy = _mm256_set_pd(e[3].iy, e[2].iy, e[1].iy, e[0].iy);
-                let jy = _mm256_set_pd(e[3].jy, e[2].jy, e[1].jy, e[0].jy);
-                let sub = _mm256_set_pd(e[3].sub, e[2].sub, e[1].sub, e[0].sub);
-                let slope = _mm256_set_pd(e[3].slope, e[2].slope, e[1].slope, e[0].slope);
+                let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.iy[0]));
+                let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.jy[0]));
+                let sub =  _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.sub[0]));
+                let slope =  _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.slope[0]));
 
                 //  edge.iy <= test.1
                 let above_lower = _mm256_cmp_pd(iy, ty, _CMP_LE_OQ);
