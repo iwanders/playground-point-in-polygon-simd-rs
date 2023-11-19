@@ -10,6 +10,13 @@ pub mod print {
         unsafe { _mm256_storeu_si256(v.as_ptr() as *mut _, *input) };
         format!("{:02X?}", v)
     }
+    pub fn pli(input: &__m256i) -> String {
+        use std::arch::x86_64::_mm256_storeu_si256;
+        let v: [i64; 4] = [0; 4];
+        unsafe { _mm256_storeu_si256(v.as_ptr() as *mut _, *input) };
+        format!("{:02?}", v)
+    }
+
 
     #[allow(dead_code)]
     /// Print a vector of m128d type.
@@ -114,7 +121,7 @@ pub fn inside_assume_closed(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool 
 /// Vectorized form without precomputation. Assumes closed.
 pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     unsafe {
-        use print::pd;
+        use print::{pd, pi, pli};
         use std::arch::x86_64::*;
         let mut inside = false;
         let mut i = 0;
@@ -122,6 +129,8 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         // Step in fours;
         let ty = _mm256_set1_pd(test.1);
         let tx = _mm256_set1_pd(test.0);
+
+        let mut crossings_totals = _mm256_set_epi64x(0, 0, 0, 0);
 
         let mask_1010 = _mm256_set_epi64x(0, -1, 0, -1);
         let mask_0101 = _mm256_set_epi64x(-1, 0, -1, 0);
@@ -232,20 +241,18 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             let in_range = _mm256_or_pd(in_range, inverted_in_range);
             let crosses = _mm256_and_pd(in_range, t_l_right);
 
-            // This section could be reduced to a vertical addition, followed by a
-            // horizontal addition at the end.
-            let bits = _mm256_movemask_pd(crosses);
-            // trace!("bits: {:?}", bits);
 
-            let count = _popcnt64(bits as i64);
-            // trace!("count: {:?}", count);
-            for _ in 0..count {
-                inside = !inside
-            }
+            // Cast this to integers, which gets is 0 for not true, -1 for true;
+            let crossess_i = _mm256_castpd_si256(crosses);
+            trace!("crossess_i {}", pli(&crossess_i));
+            crossings_totals = _mm256_sub_epi64(crossings_totals, crossess_i);
             i += 4;
         }
 
         // Finish the tail if not a multiple of four.
+        let mut cross_normal = [0i64; 4];
+        _mm256_storeu_si256(std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]), crossings_totals);
+
 
         while i < vertices.len() - 1 {
             let j = i + 1;
@@ -255,12 +262,13 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
                         / (vertices[j].1 - vertices[i].1)
                         + vertices[i].0)
             {
-                inside = !inside;
+                cross_normal[0] -= 1;
             }
             i += 1;
         }
 
-        inside
+        let t: i64 = cross_normal.iter().sum();
+        t.abs() % 2 == 1
     }
 }
 
