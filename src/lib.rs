@@ -126,7 +126,7 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         const SCALE_D: i32 = 8;
         let idx_i = _mm256_set_epi64x(3 * 2, 2 * 2, 1 * 2, 0 * 2);
         let idx_j = _mm256_set_epi64x((3 + 1) * 2, (2 + 1) * 2, (1 + 1) * 2, (0 + 1) * 2);
-        trace!("vertices: {vertices:?}, test: {test:?}");
+        // trace!("vertices: {vertices:?}, test: {test:?}");
         while i + (4 + 1) <= vertices.len() {
             let base_ix = std::mem::transmute::<_, *const f64>(&vertices[i].0);
             let base_iy = std::mem::transmute::<_, *const f64>(&vertices[i].1);
@@ -135,10 +135,10 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             let jx = _mm256_i64gather_pd(base_ix, idx_j, SCALE_D);
             let iy = _mm256_i64gather_pd(base_iy, idx_i, SCALE_D);
             let jy = _mm256_i64gather_pd(base_iy, idx_j, SCALE_D);
-            trace!("ix: {}", pd(&ix));
-            trace!("jx: {}", pd(&jx));
-            trace!("iy: {}", pd(&iy));
-            trace!("jy: {}", pd(&jy));
+            // trace!("ix: {}", pd(&ix));
+            // trace!("jx: {}", pd(&jx));
+            // trace!("iy: {}", pd(&iy));
+            // trace!("jy: {}", pd(&jy));
 
             /*
                 if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
