@@ -45,6 +45,8 @@ pub mod print {
     }
 }
 
+pub mod interval_tree;
+
 #[allow(unused_macros)]
 /// Helper print macro that can be enabled or disabled.
 macro_rules! trace {
