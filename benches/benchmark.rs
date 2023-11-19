@@ -53,9 +53,10 @@ fn z() {
     let ppoints = 1000;
     let polygon = make_polygon(ppoints, 1, r);
     let points = make_points(10000, 2, r);
-    for _ in 0..10 {
+    for _ in 0..100 {
         for point in points.iter() {
             let r = inside_simd(&polygon, point);
+            // let r = inside(&polygon, point);
             black_box(r);
         }
     }
@@ -64,8 +65,8 @@ fn z() {
 pub fn criterion_benchmark(c: &mut Criterion) {
     // return z();
     let mut group = c.benchmark_group("poly_size");
-    // for poly_points in [10, 100, 500, 1000] {
-    for poly_points in [500] {
+    for poly_points in [10, 100, 500, 1000] {
+    // for poly_points in [500] {
         group.bench_with_input(
             BenchmarkId::new("inside", poly_points),
             &poly_points,
@@ -92,6 +93,41 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 b.iter(|| {
                     for point in points.iter() {
                         let r = inside_simd(&polygon, point);
+                        black_box(r);
+                    }
+                });
+            },
+        );
+
+
+        group.bench_with_input(
+            BenchmarkId::new("precomputed_inside", poly_points),
+            &poly_points,
+            |b, &ppoints| {
+                let r = 100.0;
+                let polygon = make_polygon(ppoints, 1, r);
+                let points = make_points(10000, 2, r);
+                let precomp = point_in_polygon::Precomputed::new(&polygon);
+                b.iter(|| {
+                    for point in points.iter() {
+                        let r = precomp.inside(point);
+                        black_box(r);
+                    }
+                });
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("precomputed_inside_simd", poly_points),
+            &poly_points,
+            |b, &ppoints| {
+                let r = 100.0;
+                let polygon = make_polygon(ppoints, 1, r);
+                let points = make_points(10000, 2, r);
+                let precomp = point_in_polygon::Precomputed::new(&polygon);
+                b.iter(|| {
+                    for point in points.iter() {
+                        let r = precomp.inside_simd(point);
                         black_box(r);
                     }
                 });

@@ -121,9 +121,9 @@ pub fn inside_assume_closed(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool 
 /// Vectorized form without precomputation. Assumes closed.
 pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
     unsafe {
-        use print::{pd, pi, pli};
+        #[allow(unused_imports)]
+        use print::*;
         use std::arch::x86_64::*;
-        let mut inside = false;
         let mut i = 0;
 
         // Step in fours;
@@ -132,12 +132,6 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 
         let mut crossings_totals = _mm256_set_epi64x(0, 0, 0, 0);
 
-        let mask_1010 = _mm256_set_epi64x(0, -1, 0, -1);
-        let mask_0101 = _mm256_set_epi64x(-1, 0, -1, 0);
-        let mask_0001 = _mm256_set_epi64x(0, 0, 0, -1);
-        // let mask_1110 = _mm256_set_epi64x(-1, -1, -1, 0);
-        let f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
-        let mask_1110 = _mm256_set_pd(f64_bitsset, f64_bitsset, f64_bitsset, 0.0);
         trace!("vertices: {vertices:?}, test: {test:?}");
         while i + (4 + 1) <= vertices.len() {
             let base_x01 = std::mem::transmute::<_, *const f64>(&vertices[i].0);
@@ -153,45 +147,57 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             // need:
             // x0, x1, x2, x3
             //     x1, x2, x3, x4
+            let ix;
+            let iy;
+            let jx;
+            let jy;
+            const USE_MOVES: bool = true;
+            if USE_MOVES {
+                let mask_1010 = _mm256_set_epi64x(0, -1, 0, -1);
+                let mask_0101 = _mm256_set_epi64x(-1, 0, -1, 0);
+                let mask_0001 = _mm256_set_epi64x(0, 0, 0, -1);
 
-            // Order doesn't actually matter, as long as it is consistent.
-            // __m256d _mm256_maskload_pd (double const * mem_addr, __m256i mask)
-            let ix_1010 = _mm256_maskload_pd(base_x01, mask_1010); // holds x0, 0, x1, 0
-            let iy_1010 = _mm256_maskload_pd(base_y01, mask_1010); // holds y0, 0, y1, 0
-            let ix_0101 = _mm256_maskload_pd(base_x23, mask_0101); // holds 0, x2, 0, x3
-            let iy_0101 = _mm256_maskload_pd(base_y23, mask_0101); // holds 0, y2, 0, y3
-                                                                   // trace!("iy_1010: {}", pd(&iy_1010));
-                                                                   // trace!("iy_0101: {}", pd(&iy_0101));
+                let f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
+                let mask_1110 = _mm256_set_pd(f64_bitsset, f64_bitsset, f64_bitsset, 0.0);
+                // Order doesn't actually matter, as long as it is consistent.
+                // __m256d _mm256_maskload_pd (double const * mem_addr, __m256i mask)
+                let ix_1010 = _mm256_maskload_pd(base_x01, mask_1010); // holds x0, 0, x1, 0
+                let iy_1010 = _mm256_maskload_pd(base_y01, mask_1010); // holds y0, 0, y1, 0
+                let ix_0101 = _mm256_maskload_pd(base_x23, mask_0101); // holds 0, x2, 0, x3
+                let iy_0101 = _mm256_maskload_pd(base_y23, mask_0101); // holds 0, y2, 0, y3
+                                                                       // trace!("iy_1010: {}", pd(&iy_1010));
+                                                                       // trace!("iy_0101: {}", pd(&iy_0101));
 
-            let ix = _mm256_or_pd(ix_1010, ix_0101);
-            let iy = _mm256_or_pd(iy_1010, iy_0101);
-            trace!("ix: {}", pd(&ix));
-            trace!("iy: {}", pd(&iy));
+                ix = _mm256_or_pd(ix_1010, ix_0101);
+                iy = _mm256_or_pd(iy_1010, iy_0101);
 
-            // These vectors are      x0, x2, x1, x3
-            // To get the +1, we need to make:
-            // here, we need to make; x1, x3, x2, x4
-            // So that's shuffle the lanes.
-            // First, replace 0 with 4, then we can do a permutate to cross lane boundaries.
-            let jx_0001 = _mm256_maskload_pd(base_x4, mask_0001); // holds x4, 0, 0, 0
-            let jy_0001 = _mm256_maskload_pd(base_y4, mask_0001); // holds y4, 0, 0, 0
+                // These vectors are      x0, x2, x1, x3
+                // To get the +1, we need to make:
+                // here, we need to make; x1, x3, x2, x4
+                // So that's shuffle the lanes.
+                // First, replace 0 with 4, then we can do a permutate to cross lane boundaries.
+                let jx_0001 = _mm256_maskload_pd(base_x4, mask_0001); // holds x4, 0, 0, 0
+                let jy_0001 = _mm256_maskload_pd(base_y4, mask_0001); // holds y4, 0, 0, 0
 
-            let ix_1110 = _mm256_and_pd(ix, mask_1110);
-            let iy_1110 = _mm256_and_pd(iy, mask_1110);
+                let ix_1110 = _mm256_and_pd(ix, mask_1110);
+                let iy_1110 = _mm256_and_pd(iy, mask_1110);
 
-            let jx_wrong = _mm256_or_pd(jx_0001, ix_1110);
-            let jy_wrong = _mm256_or_pd(jy_0001, iy_1110);
-            // trace!("jx_wrong: {}", pd(&jx_wrong));
-            // trace!("jy_wrong: {}", pd(&jy_wrong));
-            // Now, all that remains is a permutate to cross some lane boundaries.
-            //                        11  10  01  00
-            // holds                  x4, x2, x1, x3
-            // here, we need to make; x1, x3, x2, x4
-            let jx = _mm256_permute4x64_pd(jx_wrong, 0b00_01_11_10);
-            let jy = _mm256_permute4x64_pd(jy_wrong, 0b00_01_11_10);
-
-            trace!("jx: {}", pd(&jx));
-            trace!("jy: {}", pd(&jy));
+                let jx_wrong = _mm256_or_pd(jx_0001, ix_1110);
+                let jy_wrong = _mm256_or_pd(jy_0001, iy_1110);
+                // trace!("jx_wrong: {}", pd(&jx_wrong));
+                // trace!("jy_wrong: {}", pd(&jy_wrong));
+                // Now, all that remains is a permutate to cross some lane boundaries.
+                //                        11  10  01  00
+                // holds                  x4, x2, x1, x3
+                // here, we need to make; x1, x3, x2, x4
+                jx = _mm256_permute4x64_pd(jx_wrong, 0b00_01_11_10);
+                jy = _mm256_permute4x64_pd(jy_wrong, 0b00_01_11_10);
+            } else {
+                ix = _mm256_set_pd(vertices[i+3].0, vertices[i+2].0, vertices[i+1].0, vertices[i].0);
+                jx = _mm256_set_pd(vertices[i+3 + 1].0, vertices[i+2 + 1].0, vertices[i+1 + 1].0, vertices[i + 1].0);
+                iy = _mm256_set_pd(vertices[i+3].1, vertices[i+2].1, vertices[i+1].1, vertices[i].1);
+                jy = _mm256_set_pd(vertices[i+3 + 1].1, vertices[i+2 + 1].1, vertices[i+1 + 1].1, vertices[i + 1].1);
+            }
 
             /*
                 if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
@@ -241,10 +247,8 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
             let in_range = _mm256_or_pd(in_range, inverted_in_range);
             let crosses = _mm256_and_pd(in_range, t_l_right);
 
-
             // Cast this to integers, which gets is 0 for not true, -1 for true;
             let crossess_i = _mm256_castpd_si256(crosses);
-            trace!("crossess_i {}", pli(&crossess_i));
             crossings_totals = _mm256_sub_epi64(crossings_totals, crossess_i);
             i += 4;
         }
@@ -322,7 +326,7 @@ impl Precomputed {
     }
 
     /// Simple inside check, iterating through the edges.
-    pub fn inside(self, test: &(f64, f64)) -> bool {
+    pub fn inside(&self, test: &(f64, f64)) -> bool {
         let mut inside = false;
         for edge in self.edges.iter() {
             if (edge.iy > test.1) != (edge.jy > test.1) {
@@ -336,7 +340,7 @@ impl Precomputed {
     }
 
     /// SIMD inside check, iterating through edges in steps of four.
-    pub fn inside_simd(self, test: &(f64, f64)) -> bool {
+    pub fn inside_simd(&self, test: &(f64, f64)) -> bool {
         // use print::pd;
         // use trace;
         use std::arch::x86_64::*;
@@ -368,12 +372,12 @@ impl Precomputed {
         */
 
         unsafe {
-            let mut inside = false;
             let mut i = 0;
 
             // Step in fours;
             let ty = _mm256_set1_pd(test.1);
             let tx = _mm256_set1_pd(test.0);
+            let mut crossings_totals = _mm256_set_epi64x(0, 0, 0, 0);
             while i + 4 <= self.edges.len() {
                 let e = &self.edges[i..i + 4];
                 // Could do a gather here, but lets get this working and then just make the struct
@@ -409,33 +413,30 @@ impl Precomputed {
                 let in_range = _mm256_or_pd(in_range, inverted_in_range);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
-                // This section could be reduced to a vertical addition, followed by a
-                // horizontal addition at the end.
-                let bits = _mm256_movemask_pd(crosses);
-                // trace!("bits: {:?}", bits);
-
-                let count = _popcnt64(bits as i64);
-                // trace!("count: {:?}", count);
-                for _ in 0..count {
-                    inside = !inside
-                }
+                // Cast this to integers, which gets is 0 for not true, -1 for true;
+                let crossess_i = _mm256_castpd_si256(crosses);
+                crossings_totals = _mm256_sub_epi64(crossings_totals, crossess_i);
 
                 i += 4;
             }
 
             // Finish the tail if not a multiple of four.
+            let mut cross_normal = [0i64; 4];
+            _mm256_storeu_si256(std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]), crossings_totals);
+
             while i < self.edges.len() {
                 let edge = &self.edges[i];
                 if (edge.iy <= test.1) && (test.1 < edge.jy) {
                     let c = test.0 < (test.1 * edge.slope + edge.sub);
                     if c {
-                        inside = !inside
+                        cross_normal[0] -= 1;
                     }
                 }
                 i += 1;
             }
 
-            inside
+            let t: i64 = cross_normal.iter().sum();
+            t.abs() % 2 == 1
         }
     }
 }
