@@ -1,12 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use point_in_polygon::{inside, inside_simd};
-
 
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-fn make_polygon(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)>{
+fn make_polygon(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)> {
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
     fn create_circle_parts(segments: &[(f64, f64)]) -> Vec<(f64, f64)> {
         let mut v = Vec::<(f64, f64)>::new();
@@ -37,7 +36,7 @@ fn make_polygon(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)>{
     create_circle_parts(&distances)
 }
 
-fn make_points(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)>{
+fn make_points(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)> {
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
     let mut r = vec![];
     for _ in 0..points {
@@ -65,30 +64,39 @@ fn z() {
 pub fn criterion_benchmark(c: &mut Criterion) {
     // return z();
     let mut group = c.benchmark_group("poly_size");
-    for poly_points in [10, 100, 500, 1000] {
-        group.bench_with_input(BenchmarkId::new("inside", poly_points), &poly_points, |b, &ppoints| {
-            let r = 100.0;
-            let polygon = make_polygon(ppoints, 1, r);
-            let points = make_points(10000, 2, r);
-            b.iter(|| {
-                for point in points.iter() {
-                    let r = inside(&polygon, point);
-                    black_box(r);
-                }
-            });
-        });
+    // for poly_points in [10, 100, 500, 1000] {
+    for poly_points in [500] {
+        group.bench_with_input(
+            BenchmarkId::new("inside", poly_points),
+            &poly_points,
+            |b, &ppoints| {
+                let r = 100.0;
+                let polygon = make_polygon(ppoints, 1, r);
+                let points = make_points(10000, 2, r);
+                b.iter(|| {
+                    for point in points.iter() {
+                        let r = inside(&polygon, point);
+                        black_box(r);
+                    }
+                });
+            },
+        );
 
-        group.bench_with_input(BenchmarkId::new("inside_simd", poly_points), &poly_points, |b, &ppoints| {
-            let r = 100.0;
-            let polygon = make_polygon(ppoints, 1, r);
-            let points = make_points(10000, 2, r);
-            b.iter(|| {
-                for point in points.iter() {
-                    let r = inside_simd(&polygon, point);
-                    black_box(r);
-                }
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("inside_simd", poly_points),
+            &poly_points,
+            |b, &ppoints| {
+                let r = 100.0;
+                let polygon = make_polygon(ppoints, 1, r);
+                let points = make_points(10000, 2, r);
+                b.iter(|| {
+                    for point in points.iter() {
+                        let r = inside_simd(&polygon, point);
+                        black_box(r);
+                    }
+                });
+            },
+        );
     }
 }
 

@@ -123,22 +123,66 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         let ty = _mm256_set1_pd(test.1);
         let tx = _mm256_set1_pd(test.0);
 
-        const SCALE_D: i32 = 8;
-        let idx_i = _mm256_set_epi64x(3 * 2, 2 * 2, 1 * 2, 0 * 2);
-        let idx_j = _mm256_set_epi64x((3 + 1) * 2, (2 + 1) * 2, (1 + 1) * 2, (0 + 1) * 2);
-        // trace!("vertices: {vertices:?}, test: {test:?}");
+        let mask_1010 = _mm256_set_epi64x(0, -1, 0, -1);
+        let mask_0101 = _mm256_set_epi64x(-1, 0, -1, 0);
+        let mask_0001 = _mm256_set_epi64x(0, 0, 0, -1);
+        // let mask_1110 = _mm256_set_epi64x(-1, -1, -1, 0);
+        let f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
+        let mask_1110 = _mm256_set_pd(f64_bitsset, f64_bitsset, f64_bitsset, 0.0);
+        trace!("vertices: {vertices:?}, test: {test:?}");
         while i + (4 + 1) <= vertices.len() {
-            let base_ix = std::mem::transmute::<_, *const f64>(&vertices[i].0);
-            let base_iy = std::mem::transmute::<_, *const f64>(&vertices[i].1);
+            let base_x01 = std::mem::transmute::<_, *const f64>(&vertices[i].0);
+            let base_y01 = std::mem::transmute::<_, *const f64>(&vertices[i].1);
+            let base_x23 = std::mem::transmute::<_, *const f64>(&vertices[i + 1].1);
+            let base_y23 = std::mem::transmute::<_, *const f64>(&vertices[i + 2].0);
 
-            let ix = _mm256_i64gather_pd(base_ix, idx_i, SCALE_D);
-            let jx = _mm256_i64gather_pd(base_ix, idx_j, SCALE_D);
-            let iy = _mm256_i64gather_pd(base_iy, idx_i, SCALE_D);
-            let jy = _mm256_i64gather_pd(base_iy, idx_j, SCALE_D);
-            // trace!("ix: {}", pd(&ix));
-            // trace!("jx: {}", pd(&jx));
-            // trace!("iy: {}", pd(&iy));
-            // trace!("jy: {}", pd(&jy));
+            let base_x4 = std::mem::transmute::<_, *const f64>(&vertices[i + 4].0);
+            let base_y4 = std::mem::transmute::<_, *const f64>(&vertices[i + 4].1);
+
+            // vertices;
+            // x0, y0, x1, y1| x2, y2, x3, y3| x4, y4
+            // need:
+            // x0, x1, x2, x3
+            //     x1, x2, x3, x4
+
+            // Order doesn't actually matter, as long as it is consistent.
+            // __m256d _mm256_maskload_pd (double const * mem_addr, __m256i mask)
+            let ix_1010 = _mm256_maskload_pd(base_x01, mask_1010); // holds x0, 0, x1, 0
+            let iy_1010 = _mm256_maskload_pd(base_y01, mask_1010); // holds y0, 0, y1, 0
+            let ix_0101 = _mm256_maskload_pd(base_x23, mask_0101); // holds 0, x2, 0, x3
+            let iy_0101 = _mm256_maskload_pd(base_y23, mask_0101); // holds 0, y2, 0, y3
+                                                                   // trace!("iy_1010: {}", pd(&iy_1010));
+                                                                   // trace!("iy_0101: {}", pd(&iy_0101));
+
+            let ix = _mm256_or_pd(ix_1010, ix_0101);
+            let iy = _mm256_or_pd(iy_1010, iy_0101);
+            trace!("ix: {}", pd(&ix));
+            trace!("iy: {}", pd(&iy));
+
+            // These vectors are      x0, x2, x1, x3
+            // To get the +1, we need to make:
+            // here, we need to make; x1, x3, x2, x4
+            // So that's shuffle the lanes.
+            // First, replace 0 with 4, then we can do a permutate to cross lane boundaries.
+            let jx_0001 = _mm256_maskload_pd(base_x4, mask_0001); // holds x4, 0, 0, 0
+            let jy_0001 = _mm256_maskload_pd(base_y4, mask_0001); // holds y4, 0, 0, 0
+
+            let ix_1110 = _mm256_and_pd(ix, mask_1110);
+            let iy_1110 = _mm256_and_pd(iy, mask_1110);
+
+            let jx_wrong = _mm256_or_pd(jx_0001, ix_1110);
+            let jy_wrong = _mm256_or_pd(jy_0001, iy_1110);
+            // trace!("jx_wrong: {}", pd(&jx_wrong));
+            // trace!("jy_wrong: {}", pd(&jy_wrong));
+            // Now, all that remains is a permutate to cross some lane boundaries.
+            //                        11  10  01  00
+            // holds                  x4, x2, x1, x3
+            // here, we need to make; x1, x3, x2, x4
+            let jx = _mm256_permute4x64_pd(jx_wrong, 0b00_01_11_10);
+            let jy = _mm256_permute4x64_pd(jy_wrong, 0b00_01_11_10);
+
+            trace!("jx: {}", pd(&jx));
+            trace!("jy: {}", pd(&jy));
 
             /*
                 if ((vertices[i].1 > test.1) != (vertices[j].1 > test.1))
@@ -510,6 +554,38 @@ mod test {
         assert_eq!(inside_precomputed_simd(&poly, &point), true);
         assert_eq!(inside_assume_closed(&poly, &point), true);
         assert_eq!(inside_simd(&poly, &point), true);
+    }
+
+    #[test]
+    fn test_polygon_increasing() {
+        // Nice properties of the vertices incrementing.
+        let polygon = vec![
+            (1.0, 2.0),
+            (3.0, 4.0),
+            (5.0, 6.0),
+            (7.0, 8.0),
+            (9.0, 10.0),
+            (0.0, 10.0),
+            (0.0, 1.0),
+            (1.0, 2.0),
+        ];
+        let test_points = [
+            ((2.0, 4.0), true),
+            ((0.0, 0.0), false),
+            ((4.0, 8.0), true),
+            ((6.0, 0.0), false),
+        ];
+        for f in [
+            inside,
+            inside_precomputed,
+            inside_precomputed_simd,
+            inside_assume_closed,
+            inside_simd,
+        ] {
+            for (p, expected) in test_points.iter() {
+                assert_eq!(f(&polygon, p), *expected);
+            }
+        }
     }
 
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
