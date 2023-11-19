@@ -131,8 +131,6 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
         let tx = _mm256_set1_pd(test.0);
 
         let mut crossings_totals = _mm256_set_epi64x(0, 0, 0, 0);
-
-        trace!("vertices: {vertices:?}, test: {test:?}");
         while i + (4 + 1) <= vertices.len() {
             let base_x01 = std::mem::transmute::<_, *const f64>(&vertices[i].0);
             let base_y01 = std::mem::transmute::<_, *const f64>(&vertices[i].1);
