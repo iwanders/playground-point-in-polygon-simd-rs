@@ -17,7 +17,6 @@ pub mod print {
         format!("{:02?}", v)
     }
 
-
     #[allow(dead_code)]
     /// Print a vector of m128d type.
     pub fn pf(input: &__m256) -> String {
@@ -191,10 +190,30 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
                 jx = _mm256_permute4x64_pd(jx_wrong, 0b00_01_11_10);
                 jy = _mm256_permute4x64_pd(jy_wrong, 0b00_01_11_10);
             } else {
-                ix = _mm256_set_pd(vertices[i+3].0, vertices[i+2].0, vertices[i+1].0, vertices[i].0);
-                jx = _mm256_set_pd(vertices[i+3 + 1].0, vertices[i+2 + 1].0, vertices[i+1 + 1].0, vertices[i + 1].0);
-                iy = _mm256_set_pd(vertices[i+3].1, vertices[i+2].1, vertices[i+1].1, vertices[i].1);
-                jy = _mm256_set_pd(vertices[i+3 + 1].1, vertices[i+2 + 1].1, vertices[i+1 + 1].1, vertices[i + 1].1);
+                ix = _mm256_set_pd(
+                    vertices[i + 3].0,
+                    vertices[i + 2].0,
+                    vertices[i + 1].0,
+                    vertices[i].0,
+                );
+                jx = _mm256_set_pd(
+                    vertices[i + 3 + 1].0,
+                    vertices[i + 2 + 1].0,
+                    vertices[i + 1 + 1].0,
+                    vertices[i + 1].0,
+                );
+                iy = _mm256_set_pd(
+                    vertices[i + 3].1,
+                    vertices[i + 2].1,
+                    vertices[i + 1].1,
+                    vertices[i].1,
+                );
+                jy = _mm256_set_pd(
+                    vertices[i + 3 + 1].1,
+                    vertices[i + 2 + 1].1,
+                    vertices[i + 1 + 1].1,
+                    vertices[i + 1].1,
+                );
             }
 
             /*
@@ -253,8 +272,10 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 
         // Finish the tail if not a multiple of four.
         let mut cross_normal = [0i64; 4];
-        _mm256_storeu_si256(std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]), crossings_totals);
-
+        _mm256_storeu_si256(
+            std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]),
+            crossings_totals,
+        );
 
         while i < vertices.len() - 1 {
             let j = i + 1;
@@ -277,6 +298,8 @@ pub fn inside_simd(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
 // maybe
 // https://en.wikipedia.org/wiki/Interval_tree
 // https://en.wikipedia.org/wiki/Segment_tree
+// Interval tree probably best suited.
+
 // Repr c to ensure we can read the first four doubles as simd vectors.
 #[repr(C)]
 struct Edge {
@@ -342,7 +365,6 @@ impl Precomputed {
                 edge_v.push(Default::default());
             }
         }
-    
 
         Self { edges, edge_v }
     }
@@ -406,8 +428,8 @@ impl Precomputed {
                 // axis first instead of vertex first.
                 let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.iy[0]));
                 let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.jy[0]));
-                let sub =  _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.sub[0]));
-                let slope =  _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.slope[0]));
+                let sub = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.sub[0]));
+                let slope = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&e.slope[0]));
 
                 //  edge.iy <= test.1
                 let above_lower = _mm256_cmp_pd(iy, ty, _CMP_LE_OQ);
@@ -444,7 +466,10 @@ impl Precomputed {
 
             // Finish the tail if not a multiple of four.
             let mut cross_normal = [0i64; 4];
-            _mm256_storeu_si256(std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]), crossings_totals);
+            _mm256_storeu_si256(
+                std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]),
+                crossings_totals,
+            );
 
             while i < self.edges.len() {
                 let edge = &self.edges[i];

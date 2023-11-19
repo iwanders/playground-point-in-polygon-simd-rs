@@ -66,7 +66,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     // return z();
     let mut group = c.benchmark_group("poly_size");
     for poly_points in [10, 100, 500, 1000] {
-    // for poly_points in [500] {
+        // for poly_points in [500] {
         group.bench_with_input(
             BenchmarkId::new("inside", poly_points),
             &poly_points,
@@ -98,7 +98,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 });
             },
         );
-
 
         group.bench_with_input(
             BenchmarkId::new("precomputed_inside", poly_points),
