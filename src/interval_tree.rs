@@ -1,5 +1,5 @@
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq)]
 pub struct IntervalId(pub usize);
 
 #[derive(Debug, Clone)]
@@ -155,6 +155,36 @@ impl IntervalTree {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn get_interval_ids(intervals: &[((f64, f64), IntervalId)], v: f64) -> Vec<IntervalId> {
+        intervals.iter().filter_map(|((s, e), i)| {
+            if *s <= v && v <= *e {
+                Some(i)
+            } else {
+                None
+            }
+        }).cloned().collect()
+    }
+
+    fn assert_intervals(a: &[IntervalId], b: &[IntervalId]) {
+        let mut a = a.to_vec();
+        let mut b = b.to_vec();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b);
+    }
+    fn range(start: f64, end: f64, interval: f64) -> Vec<f64> {
+        let mut r = vec![];
+        let mut v = start;
+        r.push(start);
+        while v < end {
+            r.push(v);
+            v += interval;
+        }
+        r.push(end);
+        r
+    }
+
     #[test]
     fn test_interval_tree_basic() {
         let intervals = [
@@ -166,8 +196,9 @@ mod test {
             ((0.0, 0.3), IntervalId(5)),
         ];
         let t = IntervalTree::new(&intervals);
-        println!("t: {t:?}");
-        assert_eq!(t.intervals(-0.9), vec![IntervalId(0)]);
-        assert_eq!(t.intervals(-0.4), vec![IntervalId(2), IntervalId(1)]);
+
+        for v in range(-1.5, 1.0, 0.01) {
+            assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
+        }
     }
 }
