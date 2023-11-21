@@ -416,8 +416,10 @@ impl Precomputed {
                 test.1 <= edge.jy
                 let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
         */
-
         unsafe {
+            let _f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
+            let _mask_1111 = _mm256_set_pd(_f64_bitsset, _f64_bitsset, _f64_bitsset, _f64_bitsset);
+
             let mut i = 0;
 
             // Step in fours;
@@ -440,6 +442,16 @@ impl Precomputed {
                 let below_upper = _mm256_cmp_pd(ty, jy, _CMP_LT_OQ);
                 // trace!("below_upper {}", pd(&below_upper));
 
+                let in_range = _mm256_and_pd(above_lower, below_upper);
+
+                // Actually doing this continue is 14% more expensive.
+                if false {
+                    if _mm256_testz_pd(in_range, _mask_1111) != 0 {
+                        i += 4;
+                        continue;
+                    }
+                }
+
                 // Or the other way around.
                 // edge.iy <= test.1 <= edge.jy
 
@@ -450,7 +462,6 @@ impl Precomputed {
                 // println!("jskldfjsd");
 
                 // Now, we mask all three together.
-                let in_range = _mm256_and_pd(above_lower, below_upper);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
                 // Cast this to integers, which gets is 0 for not true, -1 for true;
