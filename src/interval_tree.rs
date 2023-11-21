@@ -196,6 +196,7 @@ mod test {
             ((0.0, 0.3), IntervalId(5)),
         ];
         let t = IntervalTree::new(&intervals);
+        println!("t: {t:?}");
 
         for v in range(-1.5, 1.0, 0.01) {
             assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));

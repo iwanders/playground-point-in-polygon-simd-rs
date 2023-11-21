@@ -345,8 +345,8 @@ impl Precomputed {
         let mut j = vertices.len() - 1;
         while i < vertices.len() {
             let slope = (vertices[j].0 - vertices[i].0) / (vertices[j].1 - vertices[i].1);
-            let lower_y = vertices[i].1; //.min(vertices[j].1);
-            let upper_y = vertices[j].1; //.max(vertices[i].1);
+            let lower_y = vertices[i].1.min(vertices[j].1);
+            let upper_y = vertices[j].1.max(vertices[i].1);
             edges.push(Edge {
                 // Min and max here to account for edges that are rising & lowering,
                 // avoids a second compare later.
@@ -442,9 +442,6 @@ impl Precomputed {
 
                 // Or the other way around.
                 // edge.iy <= test.1 <= edge.jy
-                //
-                let inverted_coords_above_lower = _mm256_cmp_pd(jy, ty, _CMP_LE_OQ);
-                let inverted_coords_below_upper = _mm256_cmp_pd(ty, iy, _CMP_LT_OQ);
 
                 // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
                 let right = _mm256_fmadd_pd(ty, slope, sub);
@@ -454,9 +451,6 @@ impl Precomputed {
 
                 // Now, we mask all three together.
                 let in_range = _mm256_and_pd(above_lower, below_upper);
-                let inverted_in_range =
-                    _mm256_and_pd(inverted_coords_above_lower, inverted_coords_below_upper);
-                let in_range = _mm256_or_pd(in_range, inverted_in_range);
                 let crosses = _mm256_and_pd(in_range, t_l_right);
 
                 // Cast this to integers, which gets is 0 for not true, -1 for true;
