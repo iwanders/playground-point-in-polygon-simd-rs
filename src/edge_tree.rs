@@ -187,23 +187,23 @@ enum Node {
     #[default]
     Placeholder,
     Branch(Branch),
-    Vector(EdgeVector),
-    // Edges(Vec<Edge>),
 }
 
 #[derive(Debug)]
 pub struct EdgeTree {
     nodes: Vec<Node>,
+    edges_vector: Vec<EdgeVector>
 }
 
 impl EdgeTree {
     pub fn new(vertices: &[(f64, f64)]) -> Self {
         let mut nodes = vec![];
+        let mut edges_vector = vec![];
 
         // If there's no work to do, don't do work.
         if vertices.is_empty() {
             nodes.push(Node::Branch(Branch::default()));
-            return EdgeTree { nodes };
+            return EdgeTree { nodes, edges_vector };
         }
 
         // First, convert the vertices to edges.
@@ -248,14 +248,14 @@ impl EdgeTree {
             let sorted_imid_right = Edge::sort_imid_right(&i_mid);
 
             let (imid_count, imid_index) = if imid_count != 0 {
-                let imid_start = nodes.len();
+                let imid_start = edges_vector.len();
 
                 // Length is always the same... 
                 let combined_left = EdgeVector::combine(&sorted_imid_left);
-                nodes.extend(combined_left.iter().map(|v| Node::Vector(*v)));
+                edges_vector.extend(combined_left.iter().map(|v| *v));
 
                 let combined_right = EdgeVector::combine(&sorted_imid_right);
-                nodes.extend(combined_right.iter().map(|v| Node::Vector(*v)));
+                edges_vector.extend(combined_right.iter().map(|v| *v));
 
                 (combined_left.len(), imid_start)
             } else {
@@ -310,7 +310,7 @@ impl EdgeTree {
             nodes[v.precursor] = Node::Branch(branch);
         }
 
-        EdgeTree { nodes }
+        EdgeTree { nodes, edges_vector }
     }
 
     pub fn inside(&self, p: &(f64, f64)) -> bool {
@@ -324,7 +324,7 @@ impl EdgeTree {
             crossings_integer: usize,
         }
 
-        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node]) {
+        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node], edges_vector: &'a [EdgeVector]) {
             match &nodes[index] {
                 Node::Branch(Branch {
                     pivot,
@@ -337,33 +337,33 @@ impl EdgeTree {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
                             
-                                for v in nodes[*imid_index.. *imid_index + *imid_count].iter() {
-                                    if let Node::Vector(v) = v {
+                                for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
+                                    // if let Node::Vector(v) = v {
                                         v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                                    } else {
-                                        panic!("jdkslfjsd");
-                                    }
+                                    // } else {
+                                        // panic!("jdkslfjsd");
+                                    // }
                                 }
                         }
 
                         if let Some(left_index) = left {
-                            recurser(o, left_index.get(), nodes)
+                            recurser(o, left_index.get(), nodes, edges_vector)
                         }
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         if *imid_count != 0 {
                             
-                                for v in nodes[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
-                                    if let Node::Vector(v) = v {
+                                for v in edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
+                                    // if let Node::Vector(v) = v {
                                         v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                                    } else {
-                                        panic!("jdkslfjsd");
-                                    }
+                                    // } else {
+                                        // panic!("jdkslfjsd");
+                                    // }
                                 }
                         }
 
                         if let Some(right_index) = right {
-                            recurser(o, right_index.get(), nodes)
+                            recurser(o, right_index.get(), nodes, edges_vector)
                         }
                     }
                 }
@@ -383,7 +383,7 @@ impl EdgeTree {
             crossings_totals,
             crossings_integer: 0,
         };
-        recurser(&mut o, 0, &self.nodes);
+        recurser(&mut o, 0, &self.nodes, &self.edges_vector);
         // println!("r: {r:?}");
 
         let mut cross_normal = [0i64; 4];
