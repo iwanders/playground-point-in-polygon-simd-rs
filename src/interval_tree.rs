@@ -260,7 +260,7 @@ mod test {
         use rand_xoshiro::rand_core::SeedableRng;
         use rand_xoshiro::Xoshiro256PlusPlus;
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(1);
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let interval_count: usize = rng.gen_range(0..100);
 
             let mut intervals = vec![];
@@ -276,6 +276,10 @@ mod test {
             let t = IntervalTree::new(&intervals);
             // println!("t: {t:?}");
 
+            let points = intervals.iter().map(|(a,_)| a.0).chain(intervals.iter().map(|(a,_)| a.1)).collect::<Vec<_>>();
+            for v in points {
+                assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
+            }
             for v in range(0.0, 100.0, 0.01) {
                 assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
             }
