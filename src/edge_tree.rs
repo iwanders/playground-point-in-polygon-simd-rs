@@ -6,7 +6,7 @@
         - Interval tree to determine what checks.
 
     Since we can check 4 edges for the roughly the cost of one, we can terminate the tree whenever
-    there's just 4 entries left.
+    there's just 4 entries left. -> Not actually faster.
 
     If at the Imid ranges we have less than four edges, we can lift ANY of the edges from lower in
     the tree up to ensure Imid is populated with multiples of four.
@@ -28,6 +28,7 @@ pub struct EdgeVector {
     sub: [f64; 4],
     slope: [f64; 4],
 }
+// Will at least be 4 * 4 * 4 = 4 * 16 = 64 bytes long.
 
 impl Default for EdgeVector {
     fn default() -> Self {
@@ -45,7 +46,6 @@ impl Default for EdgeVector {
     }
 }
 
-// Will at least be 4 * 4 * 4 = 4 * 16 = 64 bytes long.
 use std::arch::x86_64::{__m256d, __m256i};
 impl EdgeVector {
     pub fn combine(edges: &[&Edge]) -> Vec<EdgeVector> {
@@ -252,6 +252,7 @@ struct Branch {
     /// Index where Imid starts in the main vector.
     imid_index: usize,
 
+    // Yes this matters, it makes it an even multiple of eight.
     _padding: usize,
 }
 // at least 8 * 6 = 40 long
@@ -320,7 +321,7 @@ impl EdgeTree {
             // Shortcut if there's four or less intervals, make a non-branching node and
             // shove them all into a vector.
             // This is not actually faster? O_o... no this costs 10% why!?
-            if true && v.intervals.len() <= 4 {
+            if false && v.intervals.len() <= 4 {
                 let imid_index = edges_vector.len();
                 let imid_count = 1;
                 let e = EdgeVector::combine(&v.intervals).pop().unwrap();
