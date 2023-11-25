@@ -1,5 +1,5 @@
 
-#[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq, Copy)]
 pub struct IntervalId(pub usize);
 
 #[derive(Debug, Clone)]
@@ -13,8 +13,13 @@ enum Node {
         /// Index to elements above or equal to this pivot.
         right: usize,
 
-        /// Storage of Imid
-        data: Vec<((f64, f64), IntervalId)>
+        /// Count of entries in Imid.
+        count: usize,
+
+        /// The next vector holds both left boundaries as well as right boundaries.
+        /// 0..count is increasing by left endpoint.
+        /// count..end is decreasing by right endpoint.
+        sorted_imid: Vec<(f64, IntervalId)>    
     },
     Leaf ,
     /// A placeholder, used during construction.
@@ -33,7 +38,7 @@ pub struct IntervalTree {
 
 impl IntervalTree {
     pub fn new(intervals: &[((f64, f64), IntervalId)]) -> Self {
-        // collect the endpoints into a vector;
+        // This creation can be cleaned up significantly, currently there's a lof copying around.
 
         fn get_median(intervals: &[((f64, f64), IntervalId)]) -> f64 {
             let mut z = intervals.iter().map(|(se, _)| [se.0, se.1]).flatten().collect::<Vec<_>>();
@@ -48,6 +53,14 @@ impl IntervalTree {
         }
         fn get_right(intervals: &[((f64, f64), IntervalId)], v: f64) -> Vec<((f64, f64), IntervalId)> {
             intervals.iter().filter(|a| v < a.0.0).cloned().collect()
+        }
+
+        fn sort_imid(intervals: &[((f64, f64), IntervalId)]) -> Vec<(f64, IntervalId)> {
+            let mut left = intervals.iter().map(|z| (z.0.0, z.1)).collect::<Vec<_>>();
+            left.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
+            let mut right = intervals.iter().map(|z| (z.0.1, z.1)).collect::<Vec<_>>();
+            right.sort_by(|&a, &b| b.0.partial_cmp(&a.0).unwrap());
+            left.iter().chain(right.iter()).cloned().collect()
         }
             
         let mut nodes = vec![];
@@ -77,6 +90,8 @@ impl IntervalTree {
             let i_mid = get_intervals(&v.intervals, pivot);
             let i_left = get_left(&v.intervals, pivot);
             let i_right = get_right(&v.intervals, pivot);
+            let count = i_mid.len();
+            let sorted_imid = sort_imid(&i_mid);
             println!("");
             println!("pivot: {pivot}");
             println!("i_mid: {i_mid:?}");
@@ -117,7 +132,8 @@ impl IntervalTree {
                 pivot,
                 left,
                 right,
-                data: i_mid,
+                count,
+                sorted_imid,
             };
         }
 
@@ -131,14 +147,15 @@ impl IntervalTree {
             match &nodes[index] {
                 Node::Placeholder => panic!("placeholder encountered during search"),
                 Node::Split{
-                    left, pivot, right, data
+                    left, pivot, right, count, sorted_imid
                 } => {
-                    if v <= *pivot {
-                        // check imid, and traverse left.
-                        o.extend(data.iter().filter_map(|((s, _e), z)| {if s <= &v {Some(z)} else {None}}).cloned());
+                    if v < *pivot {
+                        // Search the left side of i mid up to left endpoint > v
+                        o.extend(sorted_imid[0..*count].iter().take_while(|(le, _)| le <= &v).map(|(_, i)| *i));
                         recurser(o, v, *left, nodes)
                     } else {
-                        o.extend(data.iter().filter_map(|((_s, e), z)| {if e >= &v {Some(z)} else {None}}).cloned());
+                        // Search the right side of i mid up to right endpoint < v
+                        o.extend(sorted_imid[*count..].iter().take_while(|(re, _)| re >= &v).map(|(_, i)| *i));
                         recurser(o, v, *right, nodes)
                     }
                 },
