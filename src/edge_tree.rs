@@ -20,17 +20,34 @@
 // Instead of 4 indepent vectors, we still interleave the individual chunks, that way the
 // values we are loading into simd vectors are likely in the cache after the first iy read.
 #[repr(C)]
-#[derive(Default, Debug, Clone, Copy)]
-struct EdgeVector {
+#[derive(Debug, Clone, Copy)]
+pub struct EdgeVector {
     lower: [f64; 4],
     upper: [f64; 4],
     sub: [f64; 4],
     slope: [f64; 4],
 }
+
+impl Default for EdgeVector {
+    fn default() -> Self {
+        let mut n: EdgeVector = EdgeVector{
+            lower: [0.0, 0.0, 0.0, 0.0],
+            upper: [0.0, 0.0, 0.0, 0.0],
+            sub: [0.0, 0.0, 0.0, 0.0],
+            slope: [0.0, 0.0, 0.0, 0.0],
+        };
+        for vi in 0..4 {
+            n.upper[vi] = f64::NEG_INFINITY;
+            n.lower[vi] = f64::INFINITY;
+        }
+        n
+    }
+}
+
 // Will at least be 4 * 4 * 4 = 4 * 16 = 64 bytes long.
 use std::arch::x86_64::{__m256d, __m256i};
 impl EdgeVector {
-    fn combine(edges: &[&Edge]) -> Vec<EdgeVector> {
+    pub fn combine(edges: &[&Edge]) -> Vec<EdgeVector> {
         let mut edge_v: Vec<EdgeVector> = vec![];
         for i in 0..edges.len() {
             if i % 4 == 0 {
@@ -46,7 +63,7 @@ impl EdgeVector {
     }
 
     /// Returns a vector of [-1, -1, -1, -1] for everything that crosses.
-    fn calculate_crossings(&self, crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d) {
+    pub fn calculate_crossings(&self, crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d) {
         unsafe {
             use std::arch::x86_64::*;
             let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&self.lower[0]));
@@ -82,7 +99,7 @@ impl EdgeVector {
         }
     }
 
-    fn calculate_crossings_range(
+    pub fn calculate_crossings_range(
         crossings_totals: &mut __m256i,
         tx: &__m256d,
         ty: &__m256d,
@@ -139,7 +156,7 @@ impl EdgeVector {
 
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
-struct Edge {
+pub struct Edge {
     lower: f64,
     upper: f64,
     sub: f64,
@@ -189,6 +206,7 @@ impl Edge {
         edges.iter().filter(|e| v < e.lower).copied().collect()
     }
 
+    #[allow(dead_code)]
     fn sort_imid<'a>(edges: &[&'a Edge]) -> Vec<&'a Edge> {
         let mut left = edges.iter().map(|z| (z.lower, z)).collect::<Vec<_>>();
         left.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
@@ -293,7 +311,7 @@ impl EdgeTree {
             let i_left = Edge::get_left(&v.intervals, pivot);
             let i_right = Edge::get_right(&v.intervals, pivot);
             let imid_count = i_mid.len();
-            let sorted_imid = Edge::sort_imid(&i_mid);
+            // let sorted_imid = Edge::sort_imid(&i_mid);
 
             let sorted_imid_left = Edge::sort_imid_left(&i_mid);
             let sorted_imid_right = Edge::sort_imid_right(&i_mid);
@@ -381,11 +399,11 @@ impl EdgeTree {
     pub fn inside(&self, p: &(f64, f64)) -> bool {
         use std::arch::x86_64::*;
         struct RecurseState {
-            px: f64,
-            py: f64,
+            // px: f64,
             tx: __m256d,
             ty: __m256d,
             crossings_totals: __m256i,
+            py: f64,
         }
 
         fn recurser<'a>(
@@ -438,7 +456,6 @@ impl EdgeTree {
         let tx = unsafe { _mm256_set1_pd(p.0) };
 
         let mut o = RecurseState {
-            px: p.0,
             py: p.1,
             ty,
             tx,
@@ -450,7 +467,7 @@ impl EdgeTree {
         let mut cross_normal = [0i64; 4];
         unsafe {
             _mm256_storeu_si256(
-                std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]),
+                std::mem::transmute::<_, *mut __m256i>(&mut cross_normal[0]),
                 o.crossings_totals,
             )
         };
