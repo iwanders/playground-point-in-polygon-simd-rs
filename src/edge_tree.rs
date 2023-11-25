@@ -34,7 +34,8 @@ impl EdgeVector {
         let mut edge_v: Vec<EdgeVector> = vec![];
         for i in 0..edges.len() {
             if i % 4 == 0 {
-                edge_v.push(Default::default());
+                let n: EdgeVector = Default::default();
+                edge_v.push(n);
             }
             edge_v[i / 4].lower[i % 4] = edges[i].lower;
             edge_v[i / 4].upper[i % 4] = edges[i].upper;
@@ -187,7 +188,7 @@ enum Node {
     Placeholder,
     Branch(Branch),
     Vector(EdgeVector),
-    Edges(Vec<Edge>),
+    // Edges(Vec<Edge>),
 }
 
 #[derive(Debug)]
@@ -335,18 +336,7 @@ impl EdgeTree {
                     if o.py < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
-                            if let Node::Edges(e) = &nodes[*imid_index] {
-                                o.crossings_integer +=
-                                    (e[0..*imid_count].iter().take_while(|e| e.lower <= o.py))
-                                        .map(|edge| {
-                                            if o.px < (o.py * edge.slope + edge.sub) {
-                                                1
-                                            } else {
-                                                0
-                                            }
-                                        })
-                                        .sum::<usize>()
-                            } else {
+                            
                                 for v in nodes[*imid_index.. *imid_index + *imid_count].iter() {
                                     if let Node::Vector(v) = v {
                                         v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
@@ -354,7 +344,6 @@ impl EdgeTree {
                                         panic!("jdkslfjsd");
                                     }
                                 }
-                            }
                         }
 
                         if let Some(left_index) = left {
@@ -363,18 +352,7 @@ impl EdgeTree {
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         if *imid_count != 0 {
-                            if let Node::Edges(e) = &nodes[*imid_index] {
-                                o.crossings_integer +=
-                                    (e[*imid_count..].iter().take_while(|e| e.upper > o.py))
-                                        .map(|edge| {
-                                            if o.px < (o.py * edge.slope + edge.sub) {
-                                                1
-                                            } else {
-                                                0
-                                            }
-                                        })
-                                        .sum::<usize>()
-                            } else {
+                            
                                 for v in nodes[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
                                     if let Node::Vector(v) = v {
                                         v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
@@ -382,7 +360,6 @@ impl EdgeTree {
                                         panic!("jdkslfjsd");
                                     }
                                 }
-                            }
                         }
 
                         if let Some(right_index) = right {
