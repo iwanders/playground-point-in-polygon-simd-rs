@@ -272,11 +272,15 @@ mod test {
 
                 intervals.push(((left, right), IntervalId(i)));
             }
-            
+
             let t = IntervalTree::new(&intervals);
             // println!("t: {t:?}");
 
-            let points = intervals.iter().map(|(a,_)| a.0).chain(intervals.iter().map(|(a,_)| a.1)).collect::<Vec<_>>();
+            let points = intervals
+                .iter()
+                .map(|(a, _)| a.0)
+                .chain(intervals.iter().map(|(a, _)| a.1))
+                .collect::<Vec<_>>();
             for v in points {
                 assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
             }

@@ -22,12 +22,28 @@
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 struct EdgeVector {
-    iy: [f64; 4],
-    jy: [f64; 4],
+    lower: [f64; 4],
+    upper: [f64; 4],
     sub: [f64; 4],
     slope: [f64; 4],
 }
 // Will at least be 4 * 4 * 4 = 4 * 16 = 64 bytes long.
+
+impl EdgeVector {
+    fn combine(edges: &[&Edge]) -> Vec<EdgeVector> {
+        let mut edge_v: Vec<EdgeVector> = vec![];
+        for i in 0..edges.len() {
+            if i % 4 == 0 {
+                edge_v.push(Default::default());
+            }
+            edge_v[i / 4].lower[i % 4] = edges[i].lower;
+            edge_v[i / 4].upper[i % 4] = edges[i].upper;
+            edge_v[i / 4].sub[i % 4] = edges[i].sub;
+            edge_v[i / 4].slope[i % 4] = edges[i].slope;
+        }
+        edge_v
+    }
+}
 
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -69,10 +85,10 @@ impl Edge {
 
     fn get_overlapping<'a>(edges: &[&'a Edge], v: f64) -> Vec<&'a Edge> {
         edges
-        .iter()
-        .filter(|e| e.lower <= v && v <= e.upper)
-        .copied()
-        .collect()
+            .iter()
+            .filter(|e| e.lower <= v && v <= e.upper)
+            .copied()
+            .collect()
     }
     fn get_left<'a>(edges: &[&'a Edge], v: f64) -> Vec<&'a Edge> {
         edges.iter().filter(|e| e.upper < v).copied().collect()
@@ -86,10 +102,13 @@ impl Edge {
         left.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
         let mut right = edges.iter().map(|z| (z.upper, z)).collect::<Vec<_>>();
         right.sort_by(|&a, &b| b.0.partial_cmp(&a.0).unwrap());
-        left.iter().copied().chain(right.iter().copied()).map(|(_, a)| *a).collect()
+        left.iter()
+            .copied()
+            .chain(right.iter().copied())
+            .map(|(_, a)| *a)
+            .collect()
     }
 }
-
 
 use std::num::NonZeroUsize;
 
@@ -146,7 +165,6 @@ impl EdgeTree {
             i += 1;
         }
 
-
         // Now we have a set of edges which we can convert into a tree.
         #[derive(Debug)]
         /// Helper struct for the nodes yet to be processed
@@ -154,7 +172,6 @@ impl EdgeTree {
             intervals: Vec<&'a Edge>,
             precursor: usize,
         }
-
 
         // We use a deque, such that we can insert in the rear and pop from the front.
         // This ensures that we don't get a depth first tree.
@@ -175,6 +192,24 @@ impl EdgeTree {
             let i_right = Edge::get_right(&v.intervals, pivot);
             let imid_count = i_mid.len();
             let sorted_imid = Edge::sort_imid(&i_mid);
+
+            /*
+            let (imid_count, imid_index) = if imid_count != 0 {
+                let combined = EdgeVector::combine(&sorted_imid);
+                let imid_start = nodes.len();
+                nodes.extend(combined.iter().map(|v| Node::Vector(*v)));
+                (combined.len(), imid_start)
+            } else {
+                (imid_count, 0)
+            };*/
+            let imid_index = if imid_count != 0 {
+                let imid_vec = nodes.len();
+                nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
+                imid_vec
+            } else {
+                0
+            };
+
             // println!("");
             // println!("pivot: {pivot}");
             // println!("i_mid: {i_mid:?}");
@@ -204,17 +239,9 @@ impl EdgeTree {
                 NonZeroUsize::new(right)
             };
 
-            let imid_index = if imid_count != 0 {
-                let imid_vec = nodes.len();
-                nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
-                imid_vec
-            } else {
-                0
-            };
-
             // Finally, update the precursor, replacing the placeholder with a split pointing to
             // the correct nodes.
-            let branch =  Branch{
+            let branch = Branch {
                 pivot,
                 left,
                 right,
@@ -224,11 +251,21 @@ impl EdgeTree {
             nodes[v.precursor] = Node::Branch(branch);
         }
 
-        EdgeTree{nodes}
+        EdgeTree { nodes }
     }
 
     pub fn inside(&self, p: &(f64, f64)) -> bool {
-        fn recurser<'a> (o: &mut Vec<&'a Edge>, v: f64, index: usize, nodes: &'a [Node]) {
+        use std::arch::x86_64::*;
+        struct RecurseState {
+            px: f64,
+            py: f64,
+            tx: __m256d,
+            ty: __m256d,
+            crossings_totals: __m256i,
+            crossings_integer: usize,
+        };
+
+        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node]) {
             match &nodes[index] {
                 Node::Branch(Branch {
                     pivot,
@@ -237,57 +274,77 @@ impl EdgeTree {
                     imid_count,
                     imid_index,
                 }) => {
-                    if v < *pivot {
+                    if o.py < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
                             if let Node::Edges(e) = &nodes[*imid_index] {
-                                o.extend(e[0..*imid_count]
-                                        .iter()
-                                        .take_while(|e| e.lower <= v)
-                                        )
+                                o.crossings_integer +=
+                                    (e[0..*imid_count].iter().take_while(|e| e.lower <= o.py))
+                                        .map(|edge| {
+                                            if (edge.lower <= o.py)
+                                                && (o.py < edge.upper)
+                                                && o.px < (o.py * edge.slope + edge.sub)
+                                            {
+                                                1
+                                            } else {
+                                                0
+                                            }
+                                        })
+                                        .sum::<usize>()
                             } else {
                                 panic!("boo");
                             }
                         };
 
                         if let Some(left_index) = left {
-                            recurser(o, v, left_index.get(), nodes)
+                            recurser(o, left_index.get(), nodes)
                         }
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         if *imid_count != 0 {
                             if let Node::Edges(e) = &nodes[*imid_index] {
-                                o.extend(e[*imid_count..]
-                                        .iter()
-                                        .take_while(|e| e.upper >= v)
-                                        )
+                                o.crossings_integer +=
+                                    (e[*imid_count..].iter().take_while(|e| e.upper >= o.py))
+                                        .map(|edge| {
+                                            if (edge.lower <= o.py)
+                                                && (o.py < edge.upper)
+                                                && o.px < (o.py * edge.slope + edge.sub)
+                                            {
+                                                1
+                                            } else {
+                                                0
+                                            }
+                                        })
+                                        .sum::<usize>()
                             } else {
                                 panic!("boo");
                             }
                         };
                         if let Some(right_index) = right {
-                            recurser(o, v, right_index.get(), nodes)
+                            recurser(o, right_index.get(), nodes)
                         }
                     }
-                },
+                }
                 _ => unimplemented!(),
             }
         }
-        let mut r = vec![];
-        recurser(&mut r, p.1, 0, &self.nodes);
+
+        let crossings_totals = unsafe { _mm256_set_epi64x(0, 0, 0, 0) };
+        let ty = unsafe { _mm256_set1_pd(p.1) };
+        let tx = unsafe { _mm256_set1_pd(p.0) };
+
+        let mut o = RecurseState {
+            px: p.0,
+            py: p.1,
+            ty,
+            tx,
+            crossings_totals,
+            crossings_integer: 0,
+        };
+        recurser(&mut o, 0, &self.nodes);
         // println!("r: {r:?}");
 
-        // After finding the edges, lets run through them.
-        let mut inside = false;
-        for edge in r.iter() {
-            if (edge.lower <= p.1) && (p.1 < edge.upper) {
-                let c = p.0 < (p.1 * edge.slope + edge.sub);
-                if c {
-                    inside = !inside
-                }
-            }
-        }
-        inside
+        o.crossings_integer % 2 == 1
     }
 }
 
@@ -303,9 +360,7 @@ mod test {
     #[test]
     fn test_edge_tree_creation() {
         let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
-        for f in [
-            inside_edge_tree,
-        ] {
+        for f in [inside_edge_tree] {
             assert_eq!(f(&triangle, &(1.0, 1.0)), true);
             assert_eq!(f(&triangle, &(3.0, 3.0)), false);
 
@@ -321,9 +376,7 @@ mod test {
 
     #[test]
     fn test_edge_tree_square() {
-        for f in [
-            inside_edge_tree,
-        ] {
+        for f in [inside_edge_tree] {
             let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
             assert_eq!(f(&square, &(1.0, 1.0)), true);
             assert_eq!(f(&square, &(3.0, 3.0)), false);
