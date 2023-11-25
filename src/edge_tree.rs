@@ -336,14 +336,10 @@ impl EdgeTree {
                     if o.py < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
-                            
-                                for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
-                                    // if let Node::Vector(v) = v {
-                                        v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                                    // } else {
-                                        // panic!("jdkslfjsd");
-                                    // }
-                                }
+                            // EdgeVector::calculate_crossings_left(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
+                            for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
+                                v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
+                            }
                         }
 
                         if let Some(left_index) = left {
@@ -352,14 +348,9 @@ impl EdgeTree {
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         if *imid_count != 0 {
-                            
-                                for v in edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
-                                    // if let Node::Vector(v) = v {
-                                        v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                                    // } else {
-                                        // panic!("jdkslfjsd");
-                                    // }
-                                }
+                            for v in edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
+                                v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
+                            }
                         }
 
                         if let Some(right_index) = right {
