@@ -6,7 +6,7 @@
         - Interval tree to determine what checks.
 
     Since we can check 4 edges for the roughly the cost of one, we can terminate the tree whenever
-    there's just 4 entries left.
+    there's just 4 entries left. -> Does NOT make it faster.
 
     If at the Imid ranges we have less than four edges, we can lift ANY of the edges from lower in
     the tree up to ensure Imid is populated with multiples of four.
