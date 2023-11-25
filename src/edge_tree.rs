@@ -82,7 +82,7 @@ impl EdgeVector {
         }
     }
     
-    fn calculate_crossings_left(crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d, edges: &[EdgeVector]) {
+    fn calculate_crossings_range(crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d, edges: &[EdgeVector]) {
         // Search the left side of i mid up to left endpoint > v
         for v in edges.iter() {
             unsafe {
@@ -91,7 +91,7 @@ impl EdgeVector {
 
                 use std::arch::x86_64::*;
                 let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.lower[0]));
-                // let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.upper[0]));
+                let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.upper[0]));
                 let sub = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.sub[0]));
                 let slope = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.slope[0]));
 
@@ -99,11 +99,11 @@ impl EdgeVector {
                 let above_lower = _mm256_cmp_pd(iy, *ty, _CMP_LE_OQ);
                 // trace!("above_lower {}", pd(&above_lower));
                 // test.1 <= edge.jy
-                // let below_upper = _mm256_cmp_pd(*ty, jy, _CMP_LT_OQ);
+                let below_upper = _mm256_cmp_pd(*ty, jy, _CMP_LT_OQ);
                 // trace!("below_upper {}", pd(&below_upper));
 
-                // let in_range = _mm256_and_pd(above_lower, below_upper);
-                let in_range = above_lower;
+                let in_range = _mm256_and_pd(above_lower, below_upper);
+                // let in_range = above_lower;
 
                 if true {
                     if _mm256_testz_pd(in_range, _mask_1111) != 0 {
@@ -369,7 +369,6 @@ impl EdgeTree {
             tx: __m256d,
             ty: __m256d,
             crossings_totals: __m256i,
-            crossings_integer: usize,
         }
 
         fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node], edges_vector: &'a [EdgeVector]) {
@@ -384,10 +383,7 @@ impl EdgeTree {
                     if o.py < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
-                            EdgeVector::calculate_crossings_left(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
-                            //for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
-                            //    v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                            //}
+                            EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
                         }
 
                         if let Some(left_index) = left {
@@ -396,9 +392,7 @@ impl EdgeTree {
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         if *imid_count != 0 {
-                            for v in edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
-                                v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                            }
+                            EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count]);
                         }
 
                         if let Some(right_index) = right {
@@ -420,7 +414,6 @@ impl EdgeTree {
             ty,
             tx,
             crossings_totals,
-            crossings_integer: 0,
         };
         recurser(&mut o, 0, &self.nodes, &self.edges_vector);
         // println!("r: {r:?}");
@@ -432,8 +425,6 @@ impl EdgeTree {
                 o.crossings_totals,
             )
         };
-        cross_normal[0] -= o.crossings_integer as i64;
-
         let t: i64 = cross_normal.iter().sum();
         t.abs() % 2 == 1
     }
