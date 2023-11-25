@@ -235,7 +235,7 @@ enum Node {
     #[default]
     Placeholder,
     Branch(Branch),
-    Vector(EdgeVector),
+    // Vector(EdgeVector),
 }
 
 #[derive(Debug)]
@@ -296,6 +296,26 @@ impl EdgeTree {
             let sorted_imid_left = Edge::sort_imid_left(&i_mid);
             let sorted_imid_right = Edge::sort_imid_right(&i_mid);
 
+            // Shortcut if there's four or less intervals, make a non-branching node and
+            // shove them all into a vector.
+            // This is not actually faster? O_o
+            if false && v.intervals.len() <= 4 {
+                let imid_index = edges_vector.len();
+                let imid_count = 1;
+                let e = EdgeVector::combine(&v.intervals).pop().unwrap();
+                edges_vector.push(e);
+                edges_vector.push(e);
+                let branch = Branch {
+                    pivot,
+                    left: None,
+                    right: None,
+                    imid_count,
+                    imid_index,
+                };
+                nodes[v.precursor] = Node::Branch(branch);
+                continue;
+            }
+
             let (imid_count, imid_index) = if imid_count != 0 {
                 let imid_start = edges_vector.len();
 
@@ -310,28 +330,10 @@ impl EdgeTree {
             } else {
                 (imid_count, 0)
             };
-            // let imid_index = if imid_count != 0 {
-                // let imid_vec = nodes.len();
-                // nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
-                // imid_vec
-            // } else {
-                // 0
-            // };
 
-            // println!("");
-            // println!("pivot: {pivot}");
-            // println!("i_mid: {i_mid:?}");
-            // println!("i_left: {i_left:?}");
-            // println!("i_right: {i_right:?}");
             // Determine what to do with left.
             let left = if i_left.is_empty() {
                 None
-            } else if i_left.len() <= 4 {
-                // Less than four nodes left, just make a leaf with 4 entries.
-                let left = nodes.len();
-                let v = EdgeVector::combine(&i_left).pop().unwrap();
-                nodes.push(Node::Vector(v));
-                NonZeroUsize::new(left)
             } else {
                 let left = nodes.len();
                 nodes.push(Node::default()); // left node
@@ -344,12 +346,6 @@ impl EdgeTree {
 
             let right = if i_right.is_empty() {
                 None
-            } else if i_right.len() <= 4 {
-                // Less than four nodes left, just make a leaf with 4 entries.
-                let right = nodes.len();
-                let v = EdgeVector::combine(&i_right).pop().unwrap();
-                nodes.push(Node::Vector(v));
-                NonZeroUsize::new(right)
             } else {
                 let right = nodes.len();
                 nodes.push(Node::default()); // left node
@@ -414,7 +410,7 @@ impl EdgeTree {
                         }
                     }
                 }
-                Node::Vector(e) => {e.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty)},
+                // Node::Vector(e) => {e.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty)},
                 _ => unimplemented!(),
             }
         }
