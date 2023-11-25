@@ -6,7 +6,7 @@
         - Interval tree to determine what checks.
 
     Since we can check 4 edges for the roughly the cost of one, we can terminate the tree whenever
-    there's just 4 entries left. -> Does NOT make it faster.
+    there's just 4 entries left.
 
     If at the Imid ranges we have less than four edges, we can lift ANY of the edges from lower in
     the tree up to ensure Imid is populated with multiples of four.
@@ -14,6 +14,7 @@
     Idealy
         - Strong data locality; everything in a single vector?
         - Cheap construction... O(n log n) is what literature claims.
+
 
 */
 
@@ -319,7 +320,7 @@ impl EdgeTree {
             // Shortcut if there's four or less intervals, make a non-branching node and
             // shove them all into a vector.
             // This is not actually faster? O_o... no this costs 10% why!?
-            if false && v.intervals.len() <= 4 {
+            if true && v.intervals.len() <= 4 {
                 let imid_index = edges_vector.len();
                 let imid_count = 1;
                 let e = EdgeVector::combine(&v.intervals).pop().unwrap();
