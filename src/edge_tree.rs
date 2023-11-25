@@ -81,6 +81,54 @@ impl EdgeVector {
             *crossings_totals = _mm256_sub_epi64(*crossings_totals, crossess_i);
         }
     }
+    
+    fn calculate_crossings_left(crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d, edges: &[EdgeVector]) {
+        // Search the left side of i mid up to left endpoint > v
+        for v in edges.iter() {
+            unsafe {
+                let _f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
+                let _mask_1111 = _mm256_set_pd(_f64_bitsset, _f64_bitsset, _f64_bitsset, _f64_bitsset);
+
+                use std::arch::x86_64::*;
+                let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.lower[0]));
+                // let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.upper[0]));
+                let sub = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.sub[0]));
+                let slope = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.slope[0]));
+
+                //  edge.iy <= test.1
+                let above_lower = _mm256_cmp_pd(iy, *ty, _CMP_LE_OQ);
+                // trace!("above_lower {}", pd(&above_lower));
+                // test.1 <= edge.jy
+                // let below_upper = _mm256_cmp_pd(*ty, jy, _CMP_LT_OQ);
+                // trace!("below_upper {}", pd(&below_upper));
+
+                // let in_range = _mm256_and_pd(above_lower, below_upper);
+                let in_range = above_lower;
+
+                if true {
+                    if _mm256_testz_pd(in_range, _mask_1111) != 0 {
+                        break;
+                    }
+                }
+                // Or the other way around.
+                // edge.iy <= test.1 <= edge.jy
+
+                // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+                let right = _mm256_fmadd_pd(*ty, slope, sub);
+                let t_l_right = _mm256_cmp_pd(*tx, right, _CMP_LT_OQ);
+                // trace!("t_l_right {}", pd(&t_l_right));
+                // println!("jskldfjsd");
+
+                // Now, we mask all three together.
+                let crosses = _mm256_and_pd(in_range, t_l_right);
+
+                // Cast this to integers, which gets is 0 for not true, -1 for true;
+
+                let crossess_i = _mm256_castpd_si256(crosses);
+                *crossings_totals = _mm256_sub_epi64(*crossings_totals, crossess_i);
+            }
+        }
+    }
 }
 
 #[repr(C)]
@@ -336,10 +384,10 @@ impl EdgeTree {
                     if o.py < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         if *imid_count != 0 {
-                            // EdgeVector::calculate_crossings_left(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
-                            for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
-                                v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
-                            }
+                            EdgeVector::calculate_crossings_left(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
+                            //for v in edges_vector[*imid_index.. *imid_index + *imid_count].iter() {
+                            //    v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
+                            //}
                         }
 
                         if let Some(left_index) = left {
