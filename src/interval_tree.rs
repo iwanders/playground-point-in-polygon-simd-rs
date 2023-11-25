@@ -2,16 +2,18 @@
 #[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq, Copy)]
 pub struct IntervalId(pub usize);
 
+use std::num::NonZeroUsize;
+
 #[derive(Debug, Clone)]
 /// A node in our interval tree.
 enum Node {
     Split {
         /// Index to elements below of this pivot.
-        left: usize,
+        left: Option<NonZeroUsize>,
         /// The actual center value.
         pivot: f64,
         /// Index to elements above or equal to this pivot.
-        right: usize,
+        right: Option<NonZeroUsize>,
 
         /// Count of entries in Imid.
         count: usize,
@@ -21,7 +23,6 @@ enum Node {
         /// count..end is decreasing by right endpoint.
         sorted_imid: Vec<(f64, IntervalId)>    
     },
-    Leaf ,
     /// A placeholder, used during construction.
     Placeholder,
 }
@@ -100,9 +101,7 @@ impl IntervalTree {
 
             // Determine what to do with left.
             let left = if i_left.is_empty() {
-                // Drop the points into a container.
-                nodes.push(Node::Leaf);
-                nodes.len() - 1
+                None
             } else {
                 let left = nodes.len();
                 nodes.push(Node::Placeholder); // left node
@@ -110,12 +109,10 @@ impl IntervalTree {
                     intervals: i_left,
                     precursor: left,
                 });
-                left
+                NonZeroUsize::new(left)
             };
             let right = if i_right.is_empty() {
-                // Drop the points into a container.
-                nodes.push(Node::Leaf);
-                nodes.len() - 1
+                None
             } else {
                 let right = nodes.len();
                 nodes.push(Node::Placeholder); // left node
@@ -123,7 +120,7 @@ impl IntervalTree {
                     intervals: i_right,
                     precursor: right,
                 });
-                right
+                NonZeroUsize::new(right)
             };
 
             // Finally, update the precursor, replacing the placeholder with a split pointing to
@@ -152,14 +149,17 @@ impl IntervalTree {
                     if v < *pivot {
                         // Search the left side of i mid up to left endpoint > v
                         o.extend(sorted_imid[0..*count].iter().take_while(|(le, _)| le <= &v).map(|(_, i)| *i));
-                        recurser(o, v, *left, nodes)
+                        if let Some(left_index) = left {
+                            recurser(o, v, left_index.get(), nodes)
+                        }
                     } else {
                         // Search the right side of i mid up to right endpoint < v
                         o.extend(sorted_imid[*count..].iter().take_while(|(re, _)| re >= &v).map(|(_, i)| *i));
-                        recurser(o, v, *right, nodes)
+                        if let Some(right_index) = right {
+                            recurser(o, v, right_index.get(), nodes)
+                        }
                     }
-                },
-                Node::Leaf => {},
+                }
             }
         }
 
