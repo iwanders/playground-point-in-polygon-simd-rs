@@ -53,7 +53,43 @@ impl Edge {
             slope,
         }
     }
+
+    // Amount of references here is kinda ugly, but it basically means we operate on indice instead
+    // of copying values around.
+
+    fn get_median(edges: &[&Edge]) -> f64 {
+        let mut z = edges
+            .iter()
+            .map(|se| [se.lower, se.upper])
+            .flatten()
+            .collect::<Vec<_>>();
+        z.sort_by(|&a, &b| a.partial_cmp(&b).unwrap());
+        z[z.len() / 2]
+    }
+
+    fn get_overlapping<'a>(edges: &[&'a Edge], v: f64) -> Vec<&'a Edge> {
+        edges
+        .iter()
+        .filter(|e| e.lower <= v && v <= e.upper)
+        .copied()
+        .collect()
+    }
+    fn get_left<'a>(edges: &[&'a Edge], v: f64) -> Vec<&'a Edge> {
+        edges.iter().filter(|e| e.upper < v).copied().collect()
+    }
+    fn get_right<'a>(edges: &[&'a Edge], v: f64) -> Vec<&'a Edge> {
+        edges.iter().filter(|e| v < e.lower).copied().collect()
+    }
+
+    fn sort_imid<'a>(edges: &[&'a Edge]) -> Vec<&'a Edge> {
+        let mut left = edges.iter().map(|z| (z.lower, z)).collect::<Vec<_>>();
+        left.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
+        let mut right = edges.iter().map(|z| (z.upper, z)).collect::<Vec<_>>();
+        right.sort_by(|&a, &b| b.0.partial_cmp(&a.0).unwrap());
+        left.iter().copied().chain(right.iter().copied()).map(|(_, a)| *a).collect()
+    }
 }
+
 
 use std::num::NonZeroUsize;
 
@@ -72,7 +108,7 @@ struct Branch {
     imid_count: usize,
 
     /// Index where Imid starts in the main vector.
-    imid_index: Option<NonZeroUsize>,
+    imid_index: usize,
 }
 // at least 8 * 5 = 40 long
 
@@ -82,64 +118,25 @@ enum Node {
     Placeholder,
     Branch(Branch),
     Vector(EdgeVector),
+    Edges(Vec<Edge>),
 }
 
+#[derive(Debug)]
 struct EdgeTree {
     nodes: Vec<Node>,
 }
 
 impl EdgeTree {
     pub fn new(vertices: &[(f64, f64)]) -> Self {
-
-        fn get_median(intervals: &[(f64, f64)]) -> f64 {
-            let mut z = intervals
-                .iter()
-                .map(|se| [se.0, se.1])
-                .flatten()
-                .collect::<Vec<_>>();
-            z.sort_by(|&a, &b| a.partial_cmp(&b).unwrap());
-            z[z.len() / 2]
-        }
-        fn get_intervals(
-            intervals: &[(f64, f64)],
-            v: f64,
-        ) -> Vec<(f64, f64)> {
-            intervals
-                .iter()
-                .filter(|se| se.0 <= v && v <= se.1)
-                .cloned()
-                .collect()
-        }
-        fn get_left(
-            intervals: &[(f64, f64)],
-            v: f64,
-        ) -> Vec<(f64, f64)> {
-            intervals.iter().filter(|se| se.1 < v).cloned().collect()
-        }
-        fn get_right(
-            intervals: &[(f64, f64)],
-            v: f64,
-        ) -> Vec<(f64, f64)> {
-            intervals.iter().filter(|se| v < se.0).cloned().collect()
-        }
-
-        fn sort_imid(intervals: &[(f64, f64)]) -> Vec<f64> {
-            let mut left = intervals.iter().map(|z| z.0).collect::<Vec<_>>();
-            left.sort_by(|&a, &b| a.partial_cmp(&b).unwrap());
-            let mut right = intervals.iter().map(|z| z.1).collect::<Vec<_>>();
-            right.sort_by(|&a, &b| b.partial_cmp(&a).unwrap());
-            left.iter().chain(right.iter()).cloned().collect()
-        }
-
-
         let mut nodes = vec![];
+
         // If there's no work to do, don't do work.
         if vertices.is_empty() {
             nodes.push(Node::Branch(Branch::default()));
             return EdgeTree { nodes };
         }
 
-        // First, convert the edges to vertices.
+        // First, convert the vertices to edges.
         let mut edges = vec![];
         let mut i = 0;
         let mut j = vertices.len() - 1;
@@ -150,11 +147,11 @@ impl EdgeTree {
         }
 
 
-        /*
+        // Now we have a set of edges which we can convert into a tree.
         #[derive(Debug)]
         /// Helper struct for the nodes yet to be processed
-        struct ProcessNode {
-            intervals: Vec<Edge>,
+        struct ProcessNode<'a> {
+            intervals: Vec<&'a Edge>,
             precursor: usize,
         }
 
@@ -166,24 +163,23 @@ impl EdgeTree {
         use std::collections::VecDeque;
         let mut to_process: VecDeque<ProcessNode> = VecDeque::new();
         to_process.push_back(ProcessNode {
-            intervals: intervals.to_vec(),
+            intervals: edges.iter().collect::<Vec<_>>(),
             precursor: 0,
         });
 
         while let Some(v) = to_process.pop_front() {
             // Determine the three interval options.
-            let pivot = get_median(&v.intervals);
-            let i_mid = get_intervals(&v.intervals, pivot);
-            let i_left = get_left(&v.intervals, pivot);
-            let i_right = get_right(&v.intervals, pivot);
-            let count = i_mid.len();
-            let sorted_imid = sort_imid(&i_mid);
+            let pivot = Edge::get_median(&v.intervals);
+            let i_mid = Edge::get_overlapping(&v.intervals, pivot);
+            let i_left = Edge::get_left(&v.intervals, pivot);
+            let i_right = Edge::get_right(&v.intervals, pivot);
+            let imid_count = i_mid.len();
+            let sorted_imid = Edge::sort_imid(&i_mid);
             // println!("");
             // println!("pivot: {pivot}");
             // println!("i_mid: {i_mid:?}");
             // println!("i_left: {i_left:?}");
             // println!("i_right: {i_right:?}");
-
             // Determine what to do with left.
             let left = if i_left.is_empty() {
                 None
@@ -208,23 +204,90 @@ impl EdgeTree {
                 NonZeroUsize::new(right)
             };
 
+            let imid_index = if imid_count != 0 {
+                let imid_vec = nodes.len();
+                nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
+                imid_vec
+            } else {
+                0
+            };
+
             // Finally, update the precursor, replacing the placeholder with a split pointing to
             // the correct nodes.
-            nodes[v.precursor] = Node {
+            let branch =  Branch{
                 pivot,
                 left,
                 right,
-                count,
-                sorted_imid,
+                imid_count,
+                imid_index,
             };
+            nodes[v.precursor] = Node::Branch(branch);
         }
-        */
-
-
-
-
 
         EdgeTree{nodes}
+    }
+
+    pub fn inside(&self, p: &(f64, f64)) -> bool {
+        fn recurser<'a> (o: &mut Vec<&'a Edge>, v: f64, index: usize, nodes: &'a [Node]) {
+            match &nodes[index] {
+                Node::Branch(Branch {
+                    pivot,
+                    left,
+                    right,
+                    imid_count,
+                    imid_index,
+                }) => {
+                    if v < *pivot {
+                        // Search the left side of i mid up to left endpoint > v
+                        if *imid_count != 0 {
+                            if let Node::Edges(e) = &nodes[*imid_index] {
+                                o.extend(e[0..*imid_count]
+                                        .iter()
+                                        .take_while(|e| e.lower <= v)
+                                        )
+                            } else {
+                                panic!("boo");
+                            }
+                        };
+
+                        if let Some(left_index) = left {
+                            recurser(o, v, left_index.get(), nodes)
+                        }
+                    } else {
+                        // Search the right side of i mid up to right endpoint < v
+                        if *imid_count != 0 {
+                            if let Node::Edges(e) = &nodes[*imid_index] {
+                                o.extend(e[*imid_count..]
+                                        .iter()
+                                        .take_while(|e| e.upper >= v)
+                                        )
+                            } else {
+                                panic!("boo");
+                            }
+                        };
+                        if let Some(right_index) = right {
+                            recurser(o, v, right_index.get(), nodes)
+                        }
+                    }
+                },
+                _ => unimplemented!(),
+            }
+        }
+        let mut r = vec![];
+        recurser(&mut r, p.1, 0, &self.nodes);
+        // println!("r: {r:?}");
+
+        // After finding the edges, lets run through them.
+        let mut inside = false;
+        for edge in r.iter() {
+            if (edge.lower <= p.1) && (p.1 < edge.upper) {
+                let c = p.0 < (p.1 * edge.slope + edge.sub);
+                if c {
+                    inside = !inside
+                }
+            }
+        }
+        inside
     }
 }
 
@@ -232,7 +295,94 @@ impl EdgeTree {
 mod test {
     use super::*;
 
+    fn inside_edge_tree(vertices: &[(f64, f64)], test: &(f64, f64)) -> bool {
+        let z = EdgeTree::new(vertices);
+        // println!("z: {z:?}");
+        z.inside(test)
+    }
     #[test]
     fn test_edge_tree_creation() {
+        let triangle = vec![(0.0, 0.0), (0.0, 4.0), (6.0, 0.0), (0.0, 0.0)];
+        for f in [
+            inside_edge_tree,
+        ] {
+            assert_eq!(f(&triangle, &(1.0, 1.0)), true);
+            assert_eq!(f(&triangle, &(3.0, 3.0)), false);
+
+            assert_eq!(f(&triangle, &(0.0, 0.0)), true);
+            assert_eq!(f(&triangle, &(0.0, 4.0)), false);
+            assert_eq!(f(&triangle, &(5.0, 0.0)), true);
+
+            assert_eq!(f(&triangle, &(0.0, 2.0)), true);
+            assert_eq!(f(&triangle, &(3.0, 2.0)), false);
+            assert_eq!(f(&triangle, &(3.0, 0.0)), true);
+        }
+    }
+
+    #[test]
+    fn test_edge_tree_square() {
+        for f in [
+            inside_edge_tree,
+        ] {
+            let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0), (0.0, 0.0)];
+            assert_eq!(f(&square, &(1.0, 1.0)), true);
+            assert_eq!(f(&square, &(3.0, 3.0)), false);
+
+            assert_eq!(f(&square, &(0.0, 0.0)), true);
+            assert_eq!(f(&square, &(0.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 0.0)), false);
+
+            assert_eq!(f(&square, &(0.0, 1.0)), true);
+            assert_eq!(f(&square, &(1.0, 2.0)), false);
+            assert_eq!(f(&square, &(2.0, 1.0)), false);
+            assert_eq!(f(&square, &(1.0, 0.0)), true);
+        }
+    }
+
+    // Something to create a polygon from polar coordinates, that way it always a valid polygon.
+    fn create_circle_parts(segments: &[(f64, f64)]) -> Vec<(f64, f64)> {
+        let mut v = Vec::<(f64, f64)>::new();
+        for segment in segments.iter() {
+            let theta_c = segment.0 * std::f64::consts::PI * 2.0;
+            let r_c = segment.1;
+            v.push((theta_c.cos() * r_c, theta_c.sin() * r_c));
+        }
+        // Closing point.
+        v.push(v[0]);
+        v
+    }
+
+    #[test]
+    fn test_edge_tree_circular() {
+        use rand::prelude::*;
+        use rand_xoshiro::rand_core::SeedableRng;
+        use rand_xoshiro::Xoshiro256PlusPlus;
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(1);
+        for _ in 0..100 {
+            let mut distances: Vec<(f64, f64)> = vec![];
+            let r = rng.gen::<f64>() * 100.0;
+            let mut s = 0.0;
+            distances.push((s, r * rng.gen::<f64>()));
+            let segments: usize = rng.gen_range(3..100);
+            for _ in 0..segments {
+                let sa = (1.0 / (segments as f64)) * rng.gen::<f64>();
+                s += sa;
+                if s > 1.0 {
+                    break;
+                }
+                distances.push((s, r * rng.gen::<f64>()));
+            }
+            let poly = create_circle_parts(&distances);
+            // println!("Poly: {poly:?}");
+            for _ in 0..1000 {
+                let x = r * 1.25 * rng.gen::<f64>();
+                let y = r * 1.25 * rng.gen::<f64>();
+                let point = (x, y);
+                let expected = crate::inside(&poly, &point);
+                // println!("Point: {point:?}");
+                assert_eq!(inside_edge_tree(&poly, &point), expected);
+            }
+        }
     }
 }
