@@ -122,7 +122,7 @@ enum Node {
 }
 
 #[derive(Debug)]
-struct EdgeTree {
+pub struct EdgeTree {
     nodes: Vec<Node>,
 }
 
