@@ -1,6 +1,8 @@
 #[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq, Copy)]
 pub struct IntervalId(pub usize);
 
+// We can use non zero indices to ensure the option is zero cost, this is guaranteed because
+// no node will ever refer to the root node, which is the starting point for the search.
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Default)]
@@ -8,8 +10,10 @@ use std::num::NonZeroUsize;
 struct Node {
     /// Index to elements below of this pivot.
     left: Option<NonZeroUsize>,
-    /// The actual center value.
+
+    /// The actual center, the median of the values below this.
     pivot: f64,
+
     /// Index to elements above or equal to this pivot.
     right: Option<NonZeroUsize>,
 
@@ -83,6 +87,11 @@ impl IntervalTree {
             precursor: usize,
         }
 
+        if intervals.is_empty() {
+            nodes.push(Node::default());
+            return IntervalTree { nodes };
+        }
+
         // We use a deque, such that we can insert in the rear and pop from the front.
         // This ensures that we don't get a depth first tree.
         nodes.push(Node::default()); // push the first placeholder node
@@ -102,11 +111,11 @@ impl IntervalTree {
             let i_right = get_right(&v.intervals, pivot);
             let count = i_mid.len();
             let sorted_imid = sort_imid(&i_mid);
-            println!("");
-            println!("pivot: {pivot}");
-            println!("i_mid: {i_mid:?}");
-            println!("i_left: {i_left:?}");
-            println!("i_right: {i_right:?}");
+            // println!("");
+            // println!("pivot: {pivot}");
+            // println!("i_mid: {i_mid:?}");
+            // println!("i_left: {i_left:?}");
+            // println!("i_right: {i_right:?}");
 
             // Determine what to do with left.
             let left = if i_left.is_empty() {
@@ -242,6 +251,34 @@ mod test {
 
         for v in range(-1.5, 1.0, 0.01) {
             assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
+        }
+    }
+
+    #[test]
+    fn test_random_intervals() {
+        use rand::prelude::*;
+        use rand_xoshiro::rand_core::SeedableRng;
+        use rand_xoshiro::Xoshiro256PlusPlus;
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(1);
+        for _ in 0..1000 {
+            let interval_count: usize = rng.gen_range(0..100);
+
+            let mut intervals = vec![];
+            for i in 0..interval_count {
+                let a = rng.gen::<f64>() * 100.0;
+                let b = rng.gen::<f64>() * 100.0;
+                let left = a.min(b);
+                let right = a.max(b);
+
+                intervals.push(((left, right), IntervalId(i)));
+            }
+            
+            let t = IntervalTree::new(&intervals);
+            // println!("t: {t:?}");
+
+            for v in range(0.0, 100.0, 0.01) {
+                assert_intervals(&t.intervals(v), &get_interval_ids(&intervals, v));
+            }
         }
     }
 }
