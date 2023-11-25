@@ -235,6 +235,7 @@ enum Node {
     #[default]
     Placeholder,
     Branch(Branch),
+    Vector(EdgeVector),
 }
 
 #[derive(Debug)]
@@ -325,6 +326,12 @@ impl EdgeTree {
             // Determine what to do with left.
             let left = if i_left.is_empty() {
                 None
+            } else if i_left.len() <= 4 {
+                // Less than four nodes left, just make a leaf with 4 entries.
+                let left = nodes.len();
+                let v = EdgeVector::combine(&i_left).pop().unwrap();
+                nodes.push(Node::Vector(v));
+                NonZeroUsize::new(left)
             } else {
                 let left = nodes.len();
                 nodes.push(Node::default()); // left node
@@ -334,8 +341,15 @@ impl EdgeTree {
                 });
                 NonZeroUsize::new(left)
             };
+
             let right = if i_right.is_empty() {
                 None
+            } else if i_right.len() <= 4 {
+                // Less than four nodes left, just make a leaf with 4 entries.
+                let right = nodes.len();
+                let v = EdgeVector::combine(&i_right).pop().unwrap();
+                nodes.push(Node::Vector(v));
+                NonZeroUsize::new(right)
             } else {
                 let right = nodes.len();
                 nodes.push(Node::default()); // left node
@@ -400,6 +414,7 @@ impl EdgeTree {
                         }
                     }
                 }
+                Node::Vector(e) => {e.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty)},
                 _ => unimplemented!(),
             }
         }
