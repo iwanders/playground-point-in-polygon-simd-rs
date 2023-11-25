@@ -28,7 +28,7 @@ struct EdgeVector {
     slope: [f64; 4],
 }
 // Will at least be 4 * 4 * 4 = 4 * 16 = 64 bytes long.
-
+use std::arch::x86_64::{__m256d, __m256i};
 impl EdgeVector {
     fn combine(edges: &[&Edge]) -> Vec<EdgeVector> {
         let mut edge_v: Vec<EdgeVector> = vec![];
@@ -42,6 +42,43 @@ impl EdgeVector {
             edge_v[i / 4].slope[i % 4] = edges[i].slope;
         }
         edge_v
+    }
+
+    /// Returns a vector of [-1, -1, -1, -1] for everything that crosses.
+    fn calculate_crossings(&self, crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d) {
+        unsafe {
+            use std::arch::x86_64::*;
+            let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&self.lower[0]));
+            let jy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&self.upper[0]));
+            let sub = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&self.sub[0]));
+            let slope = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&self.slope[0]));
+
+            //  edge.iy <= test.1
+            let above_lower = _mm256_cmp_pd(iy, *ty, _CMP_LE_OQ);
+            // trace!("above_lower {}", pd(&above_lower));
+            // test.1 <= edge.jy
+            let below_upper = _mm256_cmp_pd(*ty, jy, _CMP_LT_OQ);
+            // trace!("below_upper {}", pd(&below_upper));
+
+            let in_range = _mm256_and_pd(above_lower, below_upper);
+
+            // Or the other way around.
+            // edge.iy <= test.1 <= edge.jy
+
+            // let c = test.0 < (((test.1 * edge.slope + edge.sub) ));
+            let right = _mm256_fmadd_pd(*ty, slope, sub);
+            let t_l_right = _mm256_cmp_pd(*tx, right, _CMP_LT_OQ);
+            // trace!("t_l_right {}", pd(&t_l_right));
+            // println!("jskldfjsd");
+
+            // Now, we mask all three together.
+            let crosses = _mm256_and_pd(in_range, t_l_right);
+
+            // Cast this to integers, which gets is 0 for not true, -1 for true;
+
+            let crossess_i = _mm256_castpd_si256(crosses);
+            *crossings_totals = _mm256_sub_epi64(*crossings_totals, crossess_i);
+        }
     }
 }
 
@@ -108,6 +145,19 @@ impl Edge {
             .map(|(_, a)| *a)
             .collect()
     }
+
+    fn sort_imid_left<'a>(edges: &[&'a Edge]) -> Vec<&'a Edge> {
+        let mut left = edges.iter().map(|z| (z.lower, z)).collect::<Vec<_>>();
+        left.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
+        left.iter().map(|(_, a)| *a).copied().collect()
+    }
+
+    fn sort_imid_right<'a>(edges: &[&'a Edge]) -> Vec<&'a Edge> {
+        let mut right = edges.iter().map(|z| (z.upper, z)).collect::<Vec<_>>();
+        right.sort_by(|&a, &b| b.0.partial_cmp(&a.0).unwrap());
+        right.iter().map(|(_, a)| *a).copied().collect()
+    }
+    
 }
 
 use std::num::NonZeroUsize;
@@ -193,22 +243,30 @@ impl EdgeTree {
             let imid_count = i_mid.len();
             let sorted_imid = Edge::sort_imid(&i_mid);
 
-            /*
+            let sorted_imid_left = Edge::sort_imid_left(&i_mid);
+            let sorted_imid_right = Edge::sort_imid_right(&i_mid);
+
             let (imid_count, imid_index) = if imid_count != 0 {
-                let combined = EdgeVector::combine(&sorted_imid);
                 let imid_start = nodes.len();
-                nodes.extend(combined.iter().map(|v| Node::Vector(*v)));
-                (combined.len(), imid_start)
+
+                // Length is always the same... 
+                let combined_left = EdgeVector::combine(&sorted_imid_left);
+                nodes.extend(combined_left.iter().map(|v| Node::Vector(*v)));
+
+                let combined_right = EdgeVector::combine(&sorted_imid_right);
+                nodes.extend(combined_right.iter().map(|v| Node::Vector(*v)));
+
+                (combined_left.len(), imid_start)
             } else {
                 (imid_count, 0)
-            };*/
-            let imid_index = if imid_count != 0 {
-                let imid_vec = nodes.len();
-                nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
-                imid_vec
-            } else {
-                0
             };
+            // let imid_index = if imid_count != 0 {
+                // let imid_vec = nodes.len();
+                // nodes.push(Node::Edges(sorted_imid.iter().cloned().cloned().collect()));
+                // imid_vec
+            // } else {
+                // 0
+            // };
 
             // println!("");
             // println!("pivot: {pivot}");
@@ -289,9 +347,15 @@ impl EdgeTree {
                                         })
                                         .sum::<usize>()
                             } else {
-                                panic!("boo");
+                                for v in nodes[*imid_index.. *imid_index + *imid_count].iter() {
+                                    if let Node::Vector(v) = v {
+                                        v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
+                                    } else {
+                                        panic!("jdkslfjsd");
+                                    }
+                                }
                             }
-                        };
+                        }
 
                         if let Some(left_index) = left {
                             recurser(o, left_index.get(), nodes)
@@ -311,9 +375,16 @@ impl EdgeTree {
                                         })
                                         .sum::<usize>()
                             } else {
-                                panic!("boo");
+                                for v in nodes[*imid_index+ imid_count..*imid_index + 2 * *imid_count].iter() {
+                                    if let Node::Vector(v) = v {
+                                        v.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty);
+                                    } else {
+                                        panic!("jdkslfjsd");
+                                    }
+                                }
                             }
-                        };
+                        }
+
                         if let Some(right_index) = right {
                             recurser(o, right_index.get(), nodes)
                         }
@@ -338,7 +409,17 @@ impl EdgeTree {
         recurser(&mut o, 0, &self.nodes);
         // println!("r: {r:?}");
 
-        o.crossings_integer % 2 == 1
+        let mut cross_normal = [0i64; 4];
+        unsafe {
+            _mm256_storeu_si256(
+                std::mem::transmute::<_, *mut __m256i>(&cross_normal[0]),
+                o.crossings_totals,
+            )
+        };
+        cross_normal[0] -= o.crossings_integer as i64;
+
+        let t: i64 = cross_normal.iter().sum();
+        t.abs() % 2 == 1
     }
 }
 
