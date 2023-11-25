@@ -21,7 +21,7 @@ fn make_polygon(points: usize, seed: u64, radius: f64) -> Vec<(f64, f64)> {
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
 
     let mut distances: Vec<(f64, f64)> = vec![];
-    let r = rng.gen::<f64>() * radius;
+    let r = rng.gen::<f64>() * radius / 2.0 + radius / 2.0;
     let mut s = 0.0;
     distances.push((s, r * rng.gen::<f64>()));
     let segments: usize = points;
