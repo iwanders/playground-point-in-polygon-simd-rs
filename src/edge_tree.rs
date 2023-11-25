@@ -81,13 +81,19 @@ impl EdgeVector {
             *crossings_totals = _mm256_sub_epi64(*crossings_totals, crossess_i);
         }
     }
-    
-    fn calculate_crossings_range(crossings_totals: &mut __m256i, tx: &__m256d, ty: &__m256d, edges: &[EdgeVector]) {
+
+    fn calculate_crossings_range(
+        crossings_totals: &mut __m256i,
+        tx: &__m256d,
+        ty: &__m256d,
+        edges: &[EdgeVector],
+    ) {
         // Search the left side of i mid up to left endpoint > v
         for v in edges.iter() {
             unsafe {
                 let _f64_bitsset = f64::from_ne_bytes(0xFFFFFFFF_FFFFFFFFu64.to_ne_bytes());
-                let _mask_1111 = _mm256_set_pd(_f64_bitsset, _f64_bitsset, _f64_bitsset, _f64_bitsset);
+                let _mask_1111 =
+                    _mm256_set_pd(_f64_bitsset, _f64_bitsset, _f64_bitsset, _f64_bitsset);
 
                 use std::arch::x86_64::*;
                 let iy = _mm256_loadu_pd(std::mem::transmute::<_, *const f64>(&v.lower[0]));
@@ -206,7 +212,6 @@ impl Edge {
         right.sort_by(|&a, &b| b.0.partial_cmp(&a.0).unwrap());
         right.iter().map(|(_, a)| *a).copied().collect()
     }
-    
 }
 
 use std::num::NonZeroUsize;
@@ -230,20 +235,12 @@ struct Branch {
 
     _padding: usize,
 }
-// at least 8 * 5 = 40 long
-
-#[derive(Debug, Clone, Default)]
-enum Node {
-    #[default]
-    Placeholder,
-    Branch(Branch),
-    // Vector(EdgeVector),
-}
+// at least 8 * 6 = 40 long
 
 #[derive(Debug)]
 pub struct EdgeTree {
     nodes: Vec<Branch>,
-    edges_vector: Vec<EdgeVector>
+    edges_vector: Vec<EdgeVector>,
 }
 
 impl EdgeTree {
@@ -254,7 +251,10 @@ impl EdgeTree {
         // If there's no work to do, don't do work.
         if vertices.is_empty() {
             nodes.push(Branch::default());
-            return EdgeTree { nodes, edges_vector };
+            return EdgeTree {
+                nodes,
+                edges_vector,
+            };
         }
 
         // First, convert the vertices to edges.
@@ -278,7 +278,7 @@ impl EdgeTree {
         // We use a deque, such that we can insert in the rear and pop from the front.
         // This ensures that we don't get a depth first tree.
         nodes.push(Branch::default()); // push the first placeholder node
-                                     // Push the list of ondices to work on.
+                                       // Push the list of ondices to work on.
         use std::collections::VecDeque;
         let mut to_process: VecDeque<ProcessNode> = VecDeque::new();
         to_process.push_back(ProcessNode {
@@ -300,7 +300,7 @@ impl EdgeTree {
 
             // Shortcut if there's four or less intervals, make a non-branching node and
             // shove them all into a vector.
-            // This is not actually faster? O_o
+            // This is not actually faster? O_o... no this costs 10% why!?
             if false && v.intervals.len() <= 4 {
                 let imid_index = edges_vector.len();
                 let imid_count = 1;
@@ -313,7 +313,7 @@ impl EdgeTree {
                     right: None,
                     imid_count,
                     imid_index,
-                    _padding: 0
+                    _padding: 0,
                 };
                 nodes[v.precursor] = branch;
                 continue;
@@ -322,7 +322,7 @@ impl EdgeTree {
             let (imid_count, imid_index) = if imid_count != 0 {
                 let imid_start = edges_vector.len();
 
-                // Length is always the same... 
+                // Length is always the same...
                 let combined_left = EdgeVector::combine(&sorted_imid_left);
                 edges_vector.extend(combined_left.iter().map(|v| *v));
 
@@ -367,12 +367,15 @@ impl EdgeTree {
                 right,
                 imid_count,
                 imid_index,
-                    _padding: 0
+                _padding: 0,
             };
             nodes[v.precursor] = branch;
         }
 
-        EdgeTree { nodes, edges_vector }
+        EdgeTree {
+            nodes,
+            edges_vector,
+        }
     }
 
     pub fn inside(&self, p: &(f64, f64)) -> bool {
@@ -385,19 +388,29 @@ impl EdgeTree {
             crossings_totals: __m256i,
         }
 
-        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Branch], edges_vector: &'a [EdgeVector]) {
+        fn recurser<'a>(
+            o: &mut RecurseState,
+            index: usize,
+            nodes: &'a [Branch],
+            edges_vector: &'a [EdgeVector],
+        ) {
             let Branch {
-                    pivot,
-                    left,
-                    right,
-                    imid_count,
-                    imid_index,
-                    _padding
-                } =  &nodes[index];
+                pivot,
+                left,
+                right,
+                imid_count,
+                imid_index,
+                _padding,
+            } = &nodes[index];
             if o.py < *pivot {
                 // Search the left side of i mid up to left endpoint > v
                 if *imid_count != 0 {
-                    EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
+                    EdgeVector::calculate_crossings_range(
+                        &mut o.crossings_totals,
+                        &o.tx,
+                        &o.ty,
+                        &edges_vector[*imid_index..*imid_index + *imid_count],
+                    );
                 }
 
                 if let Some(left_index) = left {
@@ -406,7 +419,12 @@ impl EdgeTree {
             } else {
                 // Search the right side of i mid up to right endpoint < v
                 if *imid_count != 0 {
-                    EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count]);
+                    EdgeVector::calculate_crossings_range(
+                        &mut o.crossings_totals,
+                        &o.tx,
+                        &o.ty,
+                        &edges_vector[*imid_index + imid_count..*imid_index + 2 * *imid_count],
+                    );
                 }
 
                 if let Some(right_index) = right {
