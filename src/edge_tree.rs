@@ -227,6 +227,8 @@ struct Branch {
 
     /// Index where Imid starts in the main vector.
     imid_index: usize,
+
+    _padding: usize,
 }
 // at least 8 * 5 = 40 long
 
@@ -240,7 +242,7 @@ enum Node {
 
 #[derive(Debug)]
 pub struct EdgeTree {
-    nodes: Vec<Node>,
+    nodes: Vec<Branch>,
     edges_vector: Vec<EdgeVector>
 }
 
@@ -251,7 +253,7 @@ impl EdgeTree {
 
         // If there's no work to do, don't do work.
         if vertices.is_empty() {
-            nodes.push(Node::Branch(Branch::default()));
+            nodes.push(Branch::default());
             return EdgeTree { nodes, edges_vector };
         }
 
@@ -275,7 +277,7 @@ impl EdgeTree {
 
         // We use a deque, such that we can insert in the rear and pop from the front.
         // This ensures that we don't get a depth first tree.
-        nodes.push(Node::default()); // push the first placeholder node
+        nodes.push(Branch::default()); // push the first placeholder node
                                      // Push the list of ondices to work on.
         use std::collections::VecDeque;
         let mut to_process: VecDeque<ProcessNode> = VecDeque::new();
@@ -311,8 +313,9 @@ impl EdgeTree {
                     right: None,
                     imid_count,
                     imid_index,
+                    _padding: 0
                 };
-                nodes[v.precursor] = Node::Branch(branch);
+                nodes[v.precursor] = branch;
                 continue;
             }
 
@@ -336,7 +339,7 @@ impl EdgeTree {
                 None
             } else {
                 let left = nodes.len();
-                nodes.push(Node::default()); // left node
+                nodes.push(Branch::default()); // left node
                 to_process.push_back(ProcessNode {
                     intervals: i_left,
                     precursor: left,
@@ -348,7 +351,7 @@ impl EdgeTree {
                 None
             } else {
                 let right = nodes.len();
-                nodes.push(Node::default()); // left node
+                nodes.push(Branch::default()); // left node
                 to_process.push_back(ProcessNode {
                     intervals: i_right,
                     precursor: right,
@@ -364,8 +367,9 @@ impl EdgeTree {
                 right,
                 imid_count,
                 imid_index,
+                    _padding: 0
             };
-            nodes[v.precursor] = Node::Branch(branch);
+            nodes[v.precursor] = branch;
         }
 
         EdgeTree { nodes, edges_vector }
@@ -381,37 +385,33 @@ impl EdgeTree {
             crossings_totals: __m256i,
         }
 
-        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node], edges_vector: &'a [EdgeVector]) {
-            match &nodes[index] {
-                Node::Branch(Branch {
+        fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Branch], edges_vector: &'a [EdgeVector]) {
+            let Branch {
                     pivot,
                     left,
                     right,
                     imid_count,
                     imid_index,
-                }) => {
-                    if o.py < *pivot {
-                        // Search the left side of i mid up to left endpoint > v
-                        if *imid_count != 0 {
-                            EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
-                        }
-
-                        if let Some(left_index) = left {
-                            recurser(o, left_index.get(), nodes, edges_vector)
-                        }
-                    } else {
-                        // Search the right side of i mid up to right endpoint < v
-                        if *imid_count != 0 {
-                            EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count]);
-                        }
-
-                        if let Some(right_index) = right {
-                            recurser(o, right_index.get(), nodes, edges_vector)
-                        }
-                    }
+                    _padding
+                } =  &nodes[index];
+            if o.py < *pivot {
+                // Search the left side of i mid up to left endpoint > v
+                if *imid_count != 0 {
+                    EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index.. *imid_index + *imid_count]);
                 }
-                // Node::Vector(e) => {e.calculate_crossings(&mut o.crossings_totals, &o.tx, &o.ty)},
-                _ => unimplemented!(),
+
+                if let Some(left_index) = left {
+                    recurser(o, left_index.get(), nodes, edges_vector)
+                }
+            } else {
+                // Search the right side of i mid up to right endpoint < v
+                if *imid_count != 0 {
+                    EdgeVector::calculate_crossings_range(&mut o.crossings_totals, &o.tx, &o.ty, &edges_vector[*imid_index+ imid_count..*imid_index + 2 * *imid_count]);
+                }
+
+                if let Some(right_index) = right {
+                    recurser(o, right_index.get(), nodes, edges_vector)
+                }
             }
         }
 
