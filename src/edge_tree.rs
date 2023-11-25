@@ -263,7 +263,7 @@ impl EdgeTree {
             ty: __m256d,
             crossings_totals: __m256i,
             crossings_integer: usize,
-        };
+        }
 
         fn recurser<'a>(o: &mut RecurseState, index: usize, nodes: &'a [Node]) {
             match &nodes[index] {
@@ -281,10 +281,7 @@ impl EdgeTree {
                                 o.crossings_integer +=
                                     (e[0..*imid_count].iter().take_while(|e| e.lower <= o.py))
                                         .map(|edge| {
-                                            if (edge.lower <= o.py)
-                                                && (o.py < edge.upper)
-                                                && o.px < (o.py * edge.slope + edge.sub)
-                                            {
+                                            if o.px < (o.py * edge.slope + edge.sub) {
                                                 1
                                             } else {
                                                 0
@@ -304,12 +301,9 @@ impl EdgeTree {
                         if *imid_count != 0 {
                             if let Node::Edges(e) = &nodes[*imid_index] {
                                 o.crossings_integer +=
-                                    (e[*imid_count..].iter().take_while(|e| e.upper >= o.py))
+                                    (e[*imid_count..].iter().take_while(|e| e.upper > o.py))
                                         .map(|edge| {
-                                            if (edge.lower <= o.py)
-                                                && (o.py < edge.upper)
-                                                && o.px < (o.py * edge.slope + edge.sub)
-                                            {
+                                            if o.px < (o.py * edge.slope + edge.sub) {
                                                 1
                                             } else {
                                                 0
