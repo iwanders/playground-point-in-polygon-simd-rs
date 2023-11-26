@@ -47,6 +47,7 @@ pub mod print {
 
 pub mod edge_tree;
 pub mod interval_tree;
+pub mod c_api;
 
 #[allow(unused_macros)]
 /// Helper print macro that can be enabled or disabled.

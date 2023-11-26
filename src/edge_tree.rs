@@ -328,6 +328,7 @@ impl EdgeTree {
             let is_side = v.pure_left || v.pure_right;
             if !is_side && v.intervals.len() <= 4 {
             // if true && v.intervals.len() <= 4 {
+            // if false && v.intervals.len() <= 4 {
                 let imid_index = edges_vector.len();
                 let imid_count = 1;
                 let e = EdgeVector::combine(&v.intervals).pop().unwrap();
