@@ -293,6 +293,8 @@ impl EdgeTree {
         struct ProcessNode<'a> {
             intervals: Vec<&'a Edge>,
             precursor: usize,
+            pure_left: bool,
+            pure_right: bool,
         }
 
         // We use a deque, such that we can insert in the rear and pop from the front.
@@ -304,6 +306,8 @@ impl EdgeTree {
         to_process.push_back(ProcessNode {
             intervals: edges.iter().collect::<Vec<_>>(),
             precursor: 0,
+            pure_left: true,
+            pure_right: true,
         });
 
         while let Some(v) = to_process.pop_front() {
@@ -321,7 +325,9 @@ impl EdgeTree {
             // Shortcut if there's four or less intervals, make a non-branching node and
             // shove them all into a vector.
             // This is not actually faster? O_o... no this costs 10% why!?
-            if false && v.intervals.len() <= 4 {
+            let is_side = v.pure_left || v.pure_right;
+            if !is_side && v.intervals.len() <= 4 {
+            // if true && v.intervals.len() <= 4 {
                 let imid_index = edges_vector.len();
                 let imid_count = 1;
                 let e = EdgeVector::combine(&v.intervals).pop().unwrap();
@@ -363,6 +369,8 @@ impl EdgeTree {
                 to_process.push_back(ProcessNode {
                     intervals: i_left,
                     precursor: left,
+                    pure_left: v.pure_left,
+                    pure_right: false,
                 });
                 NonZeroUsize::new(left)
             };
@@ -375,6 +383,8 @@ impl EdgeTree {
                 to_process.push_back(ProcessNode {
                     intervals: i_right,
                     precursor: right,
+                    pure_left: false,
+                    pure_right: v.pure_right,
                 });
                 NonZeroUsize::new(right)
             };
@@ -521,6 +531,24 @@ mod test {
             assert_eq!(f(&square, &(2.0, 1.0)), false);
             assert_eq!(f(&square, &(1.0, 0.0)), true);
         }
+    }
+
+    #[test]
+    fn test_edge_tree_circle_polygon() {
+        let polygon = create_circle_parts(&[(0.0, 0.5),
+                                            (0.1, 0.6),
+                                            (0.2, 0.7),
+                                            (0.3, 0.8),
+                                            (0.4, 0.7),
+                                            (0.5, 0.6),
+                                            (0.6, 0.5),
+                                            (0.7, 0.4),
+                                            (0.8, 0.5),
+                                            (0.9, 0.7),
+                                            (1.0, 0.7)]);
+        let z = EdgeTree::new(&polygon);
+        println!("z: {z:#?}");
+        assert_eq!(z.inside(&(0.0, 0.5)), true);
     }
 
     // Something to create a polygon from polar coordinates, that way it always a valid polygon.
