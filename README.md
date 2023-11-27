@@ -84,8 +84,9 @@ while i < vertices.len() {
 
 This algorithm still iterates linearly over the vector, but benchmarks do indeed show that we are now iterating through this list of precomputed values four times as fast (7cf6cbe2d2fc8295f2f187a36c5cf46aea49971b). So `Precomputed::inside_simd` is now 4 times as fast as `Precomputed::inside`, which still uses the slope and sub precalculated values.
 
-### Next
-Probably a range tree or something, that allows checking only relevant edges, then terminate the nodes there base on the `EdgeVector` datastructure, and put the entire tree in a single vector.
+### Interval tree and edge tree
+
+In the `interval_tree.rs` is a pretty standard implementation of an interval tree. In `edge_tree.rs` this is combined with the simd vector to represent edges.... this is much faster than linearly searching through the edges. 
 
 ## License
 License is `BSD-3-Clause`.
