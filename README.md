@@ -88,5 +88,7 @@ This algorithm still iterates linearly over the vector, but benchmarks do indeed
 
 In the `interval_tree.rs` is a pretty standard implementation of an interval tree. In `edge_tree.rs` this is combined with the simd vector to represent edges.... this is much faster than linearly searching through the edges. 
 
+The current Interval tree is almost an eytzinger binary search... note the almost. Should make this a proper eytzinger search, see [eytzinger binary search on algorithmica](https://algorithmica.org/en/eytzinger) and [this faster binary search in rust](https://www.bazhenov.me/posts/faster-binary-search-in-rust/) post.
+
 ## License
 License is `BSD-3-Clause`.
